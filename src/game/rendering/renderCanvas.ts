@@ -56,6 +56,24 @@ const SIDE_CLEAR_DARK_MAX = 0.45
 const SIDE_CLEAR_DARK_MIN_NEAR_SEAM = 0
 const SIDE_CLEAR_SEAM_FALLOFF_TILES = 3
 
+/** Offscreen canvases: wall lines must stay on a layer with real transparency so
+ *  source-atop tint / side-clear and wall lights only affect drawn wall pixels (not full tile rects). */
+function ensureScratchCanvas(
+  ref: { current: HTMLCanvasElement | null },
+  nextW: number,
+  nextH: number,
+): HTMLCanvasElement {
+  if (!ref.current || ref.current.width !== nextW || ref.current.height !== nextH) {
+    ref.current = document.createElement('canvas')
+    ref.current.width = nextW
+    ref.current.height = nextH
+  }
+  return ref.current
+}
+
+const wallScratchRef = { current: null as HTMLCanvasElement | null }
+const lightScratchRef = { current: null as HTMLCanvasElement | null }
+
 function hexToRgb(hex: string): { r: number; g: number; b: number } {
   const m = hex.trim().match(/^#?([0-9a-f]{6})$/i)
   if (!m) return { r: 255, g: 255, b: 255 }
@@ -266,6 +284,11 @@ export function drawGame(
     }
   }
 
+  const wallCanvas = ensureScratchCanvas(wallScratchRef, w, h)
+  const wallCtx = wallCanvas.getContext('2d')!
+  wallCtx.clearRect(0, 0, w, h)
+  wallCtx.imageSmoothingEnabled = ctx.imageSmoothingEnabled
+
   for (let y = 0; y < bh; y++) {
     for (let x = 0; x < bw; x++) {
       if (!isWall(x, y, state)) continue
@@ -278,7 +301,7 @@ export function drawGame(
       const mask = wallNeighborMask((dx, dy) => isWall(x + dx, y + dy, state))
       const wallRect = getWallSpriteRect(mask)
       if (sprites) {
-        ctx.drawImage(
+        wallCtx.drawImage(
           sprites.wallAtlas,
           wallRect.sx,
           wallRect.sy,
@@ -290,16 +313,15 @@ export function drawGame(
           ph,
         )
       } else {
-        ctx.fillStyle = '#ffffff'
-        ctx.fillRect(px, py, pw, ph)
+        wallCtx.fillStyle = '#ffffff'
+        wallCtx.fillRect(px, py, pw, ph)
       }
-      // Tint walls only; preserve sprite alpha/details via source-atop.
-      ctx.save()
-      ctx.globalCompositeOperation = 'source-atop'
-      ctx.fillStyle = WALL_TINT_COLOR
-      ctx.fillRect(px, py, pw, ph)
-      ctx.restore()
-
+      // Tint walls only; preserve sprite alpha/details via source-atop (on opaque wall pixels only).
+      wallCtx.save()
+      wallCtx.globalCompositeOperation = 'source-atop'
+      wallCtx.fillStyle = WALL_TINT_COLOR
+      wallCtx.fillRect(px, py, pw, ph)
+      wallCtx.restore()
     }
   }
 
@@ -327,50 +349,58 @@ export function drawGame(
         SIDE_CLEAR_DARK_MIN_NEAR_SEAM * amt +
         (SIDE_CLEAR_DARK_MAX - SIDE_CLEAR_DARK_MIN_NEAR_SEAM) * nearAmt
 
-      ctx.save()
-      ctx.beginPath()
-      for (const r of rects) ctx.rect(r.px, r.py, r.pw, r.ph)
-      ctx.clip()
+      wallCtx.save()
+      wallCtx.beginPath()
+      for (const r of rects) wallCtx.rect(r.px, r.py, r.pw, r.ph)
+      wallCtx.clip()
 
-      ctx.globalCompositeOperation = 'source-atop'
+      wallCtx.globalCompositeOperation = 'source-atop'
 
       if (side === 'left') {
         const nearCenterX = offsetX + (splitX - 0.5) * tileSize
         const farCenterX = offsetX + (splitX - D - 0.5) * tileSize
-        const grad = ctx.createLinearGradient(farCenterX, 0, nearCenterX, 0)
+        const grad = wallCtx.createLinearGradient(farCenterX, 0, nearCenterX, 0)
         grad.addColorStop(0, `rgba(${WALL_DARK_TINT_RGB}, ${farAlpha})`)
         grad.addColorStop(1, `rgba(${WALL_DARK_TINT_RGB}, ${nearAlpha})`)
-        ctx.fillStyle = grad
+        wallCtx.fillStyle = grad
       } else {
         const nearCenterX = offsetX + (splitX + 0.5) * tileSize
         const farCenterX = offsetX + (splitX + D + 0.5) * tileSize
-        const grad = ctx.createLinearGradient(nearCenterX, 0, farCenterX, 0)
+        const grad = wallCtx.createLinearGradient(nearCenterX, 0, farCenterX, 0)
         grad.addColorStop(0, `rgba(${WALL_DARK_TINT_RGB}, ${nearAlpha})`)
         grad.addColorStop(1, `rgba(${WALL_DARK_TINT_RGB}, ${farAlpha})`)
-        ctx.fillStyle = grad
+        wallCtx.fillStyle = grad
       }
 
-      ctx.fillRect(0, 0, w, h)
-      ctx.restore()
+      wallCtx.fillRect(0, 0, w, h)
+      wallCtx.restore()
     }
 
     drawSide('left', leftClearProg, leftRects)
     drawSide('right', rightClearProg, rightRects)
   }
 
-  // Smooth wall-only light: clip to wall rects, then draw a radial gradient on the main canvas.
+  if (wallRects.length > 0) {
+    ctx.drawImage(wallCanvas, 0, 0)
+  }
+
+  // Wall lights: build on a scratch layer, then mask to wall alpha (line shapes) so gradients
+  // don't flood the full wall tile rectangles.
   if (wallRects.length > 0) {
     const radiusPx = tileSize * PACLIGHT_RADIUS_TILES
-    ctx.save()
-    ctx.beginPath()
-    for (const r of wallRects) ctx.rect(r.px, r.py, r.pw, r.ph)
-    ctx.clip()
-    ctx.globalCompositeOperation = 'screen'
+    const lightCanvas = ensureScratchCanvas(lightScratchRef, w, h)
+    const lctx = lightCanvas.getContext('2d')!
+    lctx.clearRect(0, 0, w, h)
+    lctx.save()
+    lctx.beginPath()
+    for (const r of wallRects) lctx.rect(r.px, r.py, r.pw, r.ph)
+    lctx.clip()
+    lctx.globalCompositeOperation = 'screen'
 
     // Pac light
     {
       for (const p of pacRenderPositions) {
-        const grad = ctx.createRadialGradient(
+        const grad = lctx.createRadialGradient(
           offsetX + p.x * tileSize,
           offsetY + p.y * tileSize,
           0,
@@ -384,8 +414,8 @@ export function drawGame(
           maxAlpha: PACLIGHT_MAX_ALPHA,
           easingExp: LIGHT_RADIAL_EASING_EXPONENT,
         })
-        ctx.fillStyle = grad
-        ctx.fillRect(0, 0, w, h)
+        lctx.fillStyle = grad
+        lctx.fillRect(0, 0, w, h)
       }
     }
 
@@ -422,7 +452,7 @@ export function drawGame(
       for (const p of ghostRenderPositions) {
         const gPx = offsetX + p.x * tileSize + tileSize / 2
         const gPy = offsetY + p.y * tileSize + tileSize / 2
-        const grad = ctx.createRadialGradient(
+        const grad = lctx.createRadialGradient(
           gPx,
           gPy,
           0,
@@ -436,11 +466,20 @@ export function drawGame(
           maxAlpha: GHOST_LIGHT_ALPHA,
           easingExp: LIGHT_RADIAL_EASING_EXPONENT,
         })
-        ctx.fillStyle = grad
-        ctx.fillRect(0, 0, w, h)
+        lctx.fillStyle = grad
+        lctx.fillRect(0, 0, w, h)
       }
     }
 
+    lctx.restore()
+
+    lctx.globalCompositeOperation = 'destination-in'
+    lctx.drawImage(wallCanvas, 0, 0)
+    lctx.globalCompositeOperation = 'source-over'
+
+    ctx.save()
+    ctx.globalCompositeOperation = 'screen'
+    ctx.drawImage(lightCanvas, 0, 0)
     ctx.restore()
   }
 
