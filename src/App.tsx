@@ -21,6 +21,7 @@ import {
   type TileSlideAnim,
 } from './game/data'
 import { SIDE_CLEAR_TRANSITION_DURATION_MS } from './game/data/constants'
+import { createGameAudio } from './game/audio/gameAudio'
 import { LevelEditorPage } from './editor/LevelEditorPage'
 import './App.css'
 
@@ -61,6 +62,23 @@ function GameScene() {
       t: 1,
     })),
   )
+
+  const audioRef = useRef(createGameAudio())
+
+  useEffect(() => {
+    const audio = audioRef.current
+    const start = () => {
+      audio.tryStartMusic()
+      window.removeEventListener('keydown', start)
+      window.removeEventListener('pointerdown', start)
+    }
+    window.addEventListener('keydown', start)
+    window.addEventListener('pointerdown', start)
+    return () => {
+      window.removeEventListener('keydown', start)
+      window.removeEventListener('pointerdown', start)
+    }
+  }, [])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -189,7 +207,9 @@ function GameScene() {
           }
         }
 
-        s = handlePelletsAndFruit(s)
+        const pelletOut = handlePelletsAndFruit(s)
+        s = pelletOut.state
+        audioRef.current.playPelletSfx(pelletOut.sfx)
         // Smoothly transition the wall tint when each side becomes fully cleared.
         const leftTarget = s.pelletsLeftLeft === 0
         const rightTarget = s.pelletsLeftRight === 0
@@ -239,16 +259,21 @@ function GameScene() {
                 ...s,
                 fearMs: Math.max(0, s.fearMs - dtMs),
               }
-        s = checkCollisions(s, ghostAnimRefs.current)
+        const collisionOut = checkCollisions(s, ghostAnimRefs.current)
+        s = collisionOut.state
+        audioRef.current.playCollisionSfx(collisionOut.sfx)
 
         if (!s.isGameOver) {
           timeTickAcc += dt
           while (timeTickAcc >= 1) {
             timeTickAcc -= 1
+            const prevT = s.timeRemaining
             const nextT = s.timeRemaining - 1
             s = { ...s, timeRemaining: Math.max(0, nextT) }
+            audioRef.current.maybePlayLowTimeWarning(prevT, s.timeRemaining)
             if (nextT <= 0) {
               s = { ...s, isGameOver: true }
+              audioRef.current.playCollisionSfx({ gameOver: true })
               break
             }
           }
@@ -315,6 +340,10 @@ function GameScene() {
       <canvas ref={canvasRef} className="gameCanvas" />
       <div className="debugControls">
         <div className="debugControlsTitle">Debug Controls</div>
+        <div className="debugControlsPos">
+          Player Pos: {debugPacPos.x.toFixed(2)}, {debugPacPos.y.toFixed(2)}
+        </div>
+        <hr className="debugControlsDivider" />
         <div className="debugControlsButtons">
           <button
             className="testButton"
@@ -337,10 +366,6 @@ function GameScene() {
           >
             Incapacitate Ghosts
           </button>
-        <hr className="debugControlsDivider" />
-        <div className="debugControlsPos">
-          Player Pos: {debugPacPos.x.toFixed(2)}, {debugPacPos.y.toFixed(2)}
-        </div>
         </div>
       </div>
     </>

@@ -1,4 +1,5 @@
 import { PAC_GHOST_COLLISION_RADIUS } from '../data/constants'
+import type { CollisionSfx } from '../audio/sfxTypes'
 import type { GameState, TileSlideAnim } from '../data/types'
 import { lerp } from '../data/utils'
 import { randomWalkableTileExcluding } from '../ghosts/pathfinding'
@@ -26,7 +27,7 @@ function ghostVisualCenterInTileSpace(
 export function checkCollisions(
   state: GameState,
   ghostAnims?: readonly TileSlideAnim[] | null,
-): GameState {
+): { state: GameState; sfx: CollisionSfx } {
   const r = PAC_GHOST_COLLISION_RADIUS
   const r2 = r * r
   const { x: px, y: py } = state.pacPosition
@@ -54,23 +55,26 @@ export function checkCollisions(
       if (state.fearMs > 0) {
         // Power-pellet: Pacman "eats" the ghost instead of losing.
         return {
-          ...state,
-          ghosts: state.ghosts.map((gg, gi) => {
-            if (gi !== i) return gg
-            return {
-              ...gg,
-              isIncapacitated: true,
-              incapacitatedPhase: 'roam',
-              incapacitatedRoamsLeft: 3,
-              incapacitatedWaitMs: 0,
-              // Give the incapacitated AI a valid starting destination.
-              destination: randomWalkableTileExcluding(state, gg.position),
-            }
-          }),
+          state: {
+            ...state,
+            ghosts: state.ghosts.map((gg, gi) => {
+              if (gi !== i) return gg
+              return {
+                ...gg,
+                isIncapacitated: true,
+                incapacitatedPhase: 'roam',
+                incapacitatedRoamsLeft: 3,
+                incapacitatedWaitMs: 0,
+                // Give the incapacitated AI a valid starting destination.
+                destination: randomWalkableTileExcluding(state, gg.position),
+              }
+            }),
+          },
+          sfx: { ghostEaten: true },
         }
       }
-      return { ...state, isGameOver: true }
+      return { state: { ...state, isGameOver: true }, sfx: { gameOver: true } }
     }
   }
-  return state
+  return { state, sfx: {} }
 }

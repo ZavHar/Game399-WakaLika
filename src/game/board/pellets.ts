@@ -12,6 +12,7 @@ import {
 import { countPellets, setTileType, tileType } from './grid'
 import { canCollectPelletOrFruitAtPosition } from '../player/pacMan'
 import { LEFT_FRUIT_SPAWN_LOCAL, mirroredRightGlobalX } from './spawns'
+import type { PelletSfx } from '../audio/sfxTypes'
 import type { GameState } from '../data/types'
 import { oppositeDirection, randomChoice } from '../data/utils'
 
@@ -39,8 +40,12 @@ function syncFruitActives(state: GameState): GameState {
   }
 }
 
-export function handlePelletsAndFruit(state: GameState): GameState {
+export function handlePelletsAndFruit(state: GameState): {
+  state: GameState
+  sfx: PelletSfx
+} {
   let s = state
+  const sfx: PelletSfx = {}
   const pos = s.pacPosition
   const gx = Math.floor(pos.x)
   const gy = Math.floor(pos.y)
@@ -65,6 +70,9 @@ export function handlePelletsAndFruit(state: GameState): GameState {
         ? s.pelletsLeftRight - 1
         : s.pelletsLeftRight,
     }
+
+    if (t === Tile.Pellet) sfx.pellet = true
+    if (t === Tile.PowerPellet) sfx.powerPellet = true
 
     if (t === Tile.PowerPellet) {
       // Start fear mode: 10s, immediate 180° turn for all ghosts.
@@ -103,6 +111,7 @@ export function handlePelletsAndFruit(state: GameState): GameState {
       fruitActiveLeft: false,
       rightSideFruitFlashMs: FRUIT_SIDE_FLASH_DURATION_MS,
     }
+    sfx.fruitLeft = true
   } else if (
     canCollectFruit &&
     s.fruitActiveRight &&
@@ -119,10 +128,11 @@ export function handlePelletsAndFruit(state: GameState): GameState {
       fruitActiveRight: false,
       leftSideFruitFlashMs: FRUIT_SIDE_FLASH_DURATION_MS,
     }
+    sfx.fruitRight = true
   }
 
   // Re-sync in same tick: supports both fruits visible when both halves are cleared.
   s = syncFruitActives(s)
 
-  return s
+  return { state: s, sfx }
 }
