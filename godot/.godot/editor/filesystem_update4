@@ -1,0 +1,17 @@
+res://scripts/game/GameRoot.gd
+res://scripts/data/LevelGrids.gd
+res://scripts/Main.gd
+res://scenes/GameRoot.tscn
+res://scripts/board/BoardModel.gd
+res://scripts/board/BoardView.gd
+res://scripts/data/Tile.gd
+res://assets/data/levelGrids.json
+res://scripts/game/GameModel.gd
+res://scripts/entities/PacView.gd
+res://scripts/rendering/GhostPathsView.gd
+res://scripts/rendering/GhostsView.gd
+res://scripts/board/WallsView.gd
+res://scripts/rendering/WallLightsView.gd
+res://scripts/rendering/WallDarkenView.gd
+res://scripts/board/TileOverlayView.gd
+res://scripts/ghosts/GhostState.gd

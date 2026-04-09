@@ -1,0 +1,38 @@
+[gd_scene format=3 uid="uid://cupgudx3cviym"]
+
+[ext_resource type="Script" uid="uid://legjkvwhcc3" path="res://scripts/game/GameRoot.gd" id="1_1"]
+[ext_resource type="Script" uid="uid://dedx0qqkmxdmc" path="res://scripts/board/WallsView.gd" id="2_1"]
+[ext_resource type="Script" uid="uid://u0veto3weo5v" path="res://scripts/entities/PacView.gd" id="3_1"]
+[ext_resource type="Script" uid="uid://cu0owb6jqdm24" path="res://scripts/rendering/GhostsView.gd" id="4_1"]
+[ext_resource type="Script" uid="uid://b1fevvtkcw8he" path="res://scripts/rendering/GhostPathsView.gd" id="5_1"]
+[ext_resource type="Script" uid="uid://7qdgnblhjqdg" path="res://scripts/rendering/WallLightsView.gd" id="6_1"]
+[ext_resource type="Script" uid="uid://c4a0o6rxjv1hp" path="res://scripts/board/TileOverlayView.gd" id="7_1"]
+[ext_resource type="Script" uid="uid://jgp276mnk30t" path="res://scripts/rendering/WallDarkenView.gd" id="8_1"]
+
+[node name="GameRoot" type="Node2D" unique_id=1547558552]
+script = ExtResource("1_1")
+
+[node name="Board" type="Node2D" parent="." unique_id=465094160]
+script = ExtResource("2_1")
+
+[node name="WallLights" type="Node2D" parent="." unique_id=439044755]
+script = ExtResource("6_1")
+
+[node name="WallDarken" type="Node2D" parent="." unique_id=1781058371]
+script = ExtResource("8_1")
+
+[node name="TileOverlay" type="Node2D" parent="." unique_id=1532168488]
+script = ExtResource("7_1")
+
+[node name="Entities" type="Node2D" parent="." unique_id=179486313]
+
+[node name="Pac" type="Node2D" parent="Entities" unique_id=411116587]
+script = ExtResource("3_1")
+
+[node name="Ghosts" type="Node2D" parent="Entities" unique_id=227064825]
+script = ExtResource("4_1")
+
+[node name="Debug" type="Node2D" parent="." unique_id=910782497]
+
+[node name="GhostPaths" type="Node2D" parent="Debug" unique_id=1502940780]
+script = ExtResource("5_1")
