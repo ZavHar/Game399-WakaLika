@@ -1,6 +1,6 @@
 extends Node2D
 
-const MAX_PARTICLES: int = 52
+const MAX_PARTICLES: int = 88
 const MIN_SPEED: float = 6.0
 const MAX_SPEED: float = 18.0
 const MIN_RADIUS: float = 0.9
