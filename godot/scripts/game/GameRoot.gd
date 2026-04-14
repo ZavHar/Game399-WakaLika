@@ -26,6 +26,8 @@ var time_label: Label
 
 var _model: RefCounted = null
 var _last_board_revision: int = 0
+var _show_ghost_paths: bool = false
+var _toggle_paths_key_was_down: bool = false
 
 func _ready() -> void:
 	# Main adds the HUD label to group `game_status_hud` in _ready; run boot after that.
@@ -35,6 +37,8 @@ func _boot_after_main() -> void:
 	_accumulator_s = 0.0
 	_sim_time_s = 0.0
 	_hitstop_left_s = 0.0
+	_show_ghost_paths = false
+	_toggle_paths_key_was_down = false
 	score_label = get_tree().get_first_node_in_group("game_score_hud") as Control
 	time_label = get_tree().get_first_node_in_group("game_time_hud") as Label
 	if score_label == null or time_label == null:
@@ -77,6 +81,7 @@ func _boot_after_main() -> void:
 			ghosts_view.call("set_model", _model)
 		if ghost_paths_view.has_method("set_model"):
 			ghost_paths_view.call("set_model", _model)
+		ghost_paths_view.visible = _show_ghost_paths
 		if score_popups_view.has_method("set_model"):
 			score_popups_view.call("set_model", _model)
 		if score_label != null:
@@ -166,6 +171,13 @@ func _set_score_label_score(score: int) -> void:
 		score_label.call("set_score", score)
 
 func _handle_input() -> void:
+	var toggle_down: bool = Input.is_key_pressed(KEY_P)
+	if toggle_down and not _toggle_paths_key_was_down:
+		_show_ghost_paths = not _show_ghost_paths
+		if ghost_paths_view != null:
+			ghost_paths_view.visible = _show_ghost_paths
+	_toggle_paths_key_was_down = toggle_down
+
 	if _model == null:
 		return
 	var next_dir: int = int(_model.get("desired_dir"))
