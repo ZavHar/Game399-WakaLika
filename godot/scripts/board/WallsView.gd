@@ -4,6 +4,7 @@ const CELL_PX: float = 18.0
 
 const WALL_TINT: Color = Color(0.0, 48.0 / 255.0, 206.0 / 255.0, 0.65)
 const WALL_TILE_PX: int = 32
+const ACTIVE_LAYOUT_PATH: String = "res://assets/data/active_layout.txt"
 
 var _board: BoardModel = null
 var _model: RefCounted = null
@@ -19,6 +20,9 @@ func load_default_layout() -> void:
 		push_error("No layouts found in levelGrids.json")
 		return
 	var layout_name: String = names[0]
+	var requested: String = _read_active_layout_name()
+	if requested != "" and lg.layouts.has(requested):
+		layout_name = requested
 	var left_half: Array = lg.get_layout(layout_name)
 	_board = BoardModel.from_left_half(left_half)
 	print("Loaded layouts: %d (active: %s)" % [names.size(), layout_name])
@@ -135,3 +139,12 @@ func _build_wall_mask_texture() -> Texture2D:
 			mask.blit_rect(_wall_img, region, Vector2i(x * WALL_TILE_PX, y * WALL_TILE_PX))
 
 	return ImageTexture.create_from_image(mask)
+
+func _read_active_layout_name() -> String:
+	if not FileAccess.file_exists(ACTIVE_LAYOUT_PATH):
+		return ""
+	var f: FileAccess = FileAccess.open(ACTIVE_LAYOUT_PATH, FileAccess.READ)
+	if f == null:
+		return ""
+	var raw: String = f.get_as_text().strip_edges()
+	return raw
