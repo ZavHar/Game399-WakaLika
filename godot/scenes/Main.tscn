@@ -15,15 +15,26 @@ script = ExtResource("1_main")
 [node name="CanvasLayerHud" type="CanvasLayer" parent="."]
 layer = 10
 
-[node name="StatusLabel" type="Label" parent="CanvasLayerHud"]
+[node name="ScoreLabel" type="Label" parent="CanvasLayerHud"]
 layout_mode = 0
 offset_left = 16.0
 offset_top = 10.0
-offset_right = 1200.0
+offset_right = 460.0
 offset_bottom = 42.0
 mouse_filter = 2
 theme_override_font_sizes/font_size = 18
-text = "..."
+text = "Score: 0"
+
+[node name="TimeLabel" type="Label" parent="CanvasLayerHud"]
+layout_mode = 0
+offset_left = 182.0
+offset_top = 10.0
+offset_right = 322.0
+offset_bottom = 48.0
+mouse_filter = 2
+theme_override_font_sizes/font_size = 28
+horizontal_alignment = 1
+text = "600"
 
 [node name="MarginPlayfield" type="MarginContainer" parent="."]
 layout_mode = 1

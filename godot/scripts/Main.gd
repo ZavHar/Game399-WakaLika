@@ -6,8 +6,10 @@ const BOARD_VIEWPORT_SIZE: Vector2i = Vector2i(504, 648)
 
 func _ready() -> void:
 	Engine.physics_ticks_per_second = TARGET_FPS
-	var hud: Label = $CanvasLayerHud/StatusLabel as Label
-	hud.add_to_group("game_status_hud")
+	var score_hud: Label = $CanvasLayerHud/ScoreLabel as Label
+	var time_hud: Label = $CanvasLayerHud/TimeLabel as Label
+	score_hud.add_to_group("game_score_hud")
+	time_hud.add_to_group("game_time_hud")
 	var vp: SubViewport = $MarginPlayfield/AspectBoard/SubViewportContainer/SubViewport as SubViewport
 	vp.size = BOARD_VIEWPORT_SIZE
 	# Match AspectRatioContainer to viewport (width / height); avoids float drift in .tscn.

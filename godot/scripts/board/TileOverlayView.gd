@@ -6,6 +6,7 @@ const FRUIT_COLOR: Color = Color(0.976, 0.451, 0.086, 1.0) # approx #f97316
 const FRUIT_SIDE_FLASH_DURATION_MS: float = 250.0
 const FRUIT_SIDE_FLASH_MAX_ALPHA: float = 0.35
 const FRUIT_SIDE_FLASH_FADE_POW: float = 2.0
+const FRUIT_SIDE_SWEEP_DURATION_MS: float = 380.0
 
 var _board: BoardModel = null
 var _model: RefCounted = null
@@ -47,6 +48,7 @@ func _draw() -> void:
 
 	_draw_fruit(cell)
 	_draw_side_flash(cell)
+	_draw_side_sweep(cell)
 
 func _draw_exit(p: Vector2, cell: Vector2) -> void:
 	if _exit_tex == null:
@@ -123,6 +125,24 @@ func _draw_side_flash(cell: Vector2) -> void:
 	if right_p > 0.0:
 		var a2: float = FRUIT_SIDE_FLASH_MAX_ALPHA * pow(right_p, FRUIT_SIDE_FLASH_FADE_POW)
 		draw_rect(Rect2(Vector2(14.0 * cell.x, 0.0), Vector2((w_tiles - 14.0) * cell.x, h_tiles * cell.y)), Color(1, 1, 1, a2), true)
+
+func _draw_side_sweep(cell: Vector2) -> void:
+	if _model == null:
+		return
+	var left_ms: float = float(_model.get("left_side_fruit_sweep_ms"))
+	var right_ms: float = float(_model.get("right_side_fruit_sweep_ms"))
+	if left_ms <= 0.0 and right_ms <= 0.0:
+		return
+
+	var h_px: float = float(BoardModel.H) * cell.y
+	if left_ms > 0.0:
+		var p_left: float = 1.0 - clampf(left_ms / FRUIT_SIDE_SWEEP_DURATION_MS, 0.0, 1.0)
+		var x_left: float = p_left * 14.0 * cell.x
+		draw_rect(Rect2(Vector2(x_left - 24.0, 0.0), Vector2(24.0, h_px)), Color(1, 0.98, 0.88, 0.24), true)
+	if right_ms > 0.0:
+		var p_right: float = 1.0 - clampf(right_ms / FRUIT_SIDE_SWEEP_DURATION_MS, 0.0, 1.0)
+		var x_right: float = (14.0 + p_right * 14.0) * cell.x
+		draw_rect(Rect2(Vector2(x_right, 0.0), Vector2(24.0, h_px)), Color(1, 0.98, 0.88, 0.24), true)
 
 func _load_svg_texture(res_path: String, raster_px: int) -> Texture2D:
 	if not FileAccess.file_exists(res_path):

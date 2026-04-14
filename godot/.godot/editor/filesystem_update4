@@ -15,3 +15,5 @@ res://scripts/rendering/GhostPathsView.gd
 res://scripts/rendering/GhostsView.gd
 res://scripts/rendering/WallDarkenView.gd
 res://scripts/rendering/WallLightsView.gd
+res://scenes/GameRoot.tscn
+res://scripts/audio/GameAudio.gd

@@ -34,6 +34,7 @@ uniform float right_prog = 0.0;
 uniform float dark_max = 0.45;
 uniform float seam_falloff_tiles = 3.0;
 uniform vec2 board_tiles = vec2(28.0, 36.0);
+uniform float time_s = 0.0;
 
 void fragment() {
 	vec2 uv = UV;
@@ -48,6 +49,8 @@ void fragment() {
 	float far_dark = dark_max * prog;
 	float near_dark = dark_max * near_prog;
 	float dark = mix(far_dark, near_dark, seam_mix);
+	float ambient = 0.04 * (0.5 + 0.5 * sin(time_s * 1.4 + x_tiles * 0.18));
+	dark += ambient;
 	float m = 1.0 - (dark * a);
 	COLOR = vec4(m, m, m, 1.0);
 }
@@ -75,6 +78,7 @@ func _update_uniforms() -> void:
 	if _model != null:
 		_shader_mat.set_shader_parameter("left_prog", float(_model.get("left_side_clear_progress")))
 		_shader_mat.set_shader_parameter("right_prog", float(_model.get("right_side_clear_progress")))
+		_shader_mat.set_shader_parameter("time_s", 600.0 - float(_model.get("time_remaining_s")))
 	_shader_mat.set_shader_parameter("dark_max", SIDE_CLEAR_DARK_MAX)
 	_shader_mat.set_shader_parameter("seam_falloff_tiles", SIDE_CLEAR_SEAM_FALLOFF_TILES)
 

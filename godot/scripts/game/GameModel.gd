@@ -27,6 +27,9 @@ const PAC_GHOST_COLLISION_RADIUS_TILES: float = 0.5
 const FRUIT_SCORE: int = 200
 const FRUIT_SIDE_FLASH_DURATION_MS: float = 250.0
 const LEFT_FRUIT_SPAWN_LOCAL: Vector2i = Vector2i(9, 17)
+const GHOST_EATEN_COMBO_BASE: int = 200
+const JUICE_POPUP_DURATION_MS: float = 800.0
+const FRUIT_SWEEP_DURATION_MS: float = 380.0
 
 const INCAP_PHASE_ROAM: String = "roam"
 const INCAP_PHASE_RETURN: String = "return_to_house"
@@ -40,6 +43,8 @@ var left_side_clear_progress: float = 0.0 # 0..1
 var right_side_clear_progress: float = 0.0 # 0..1
 var left_side_fruit_flash_ms: float = 0.0
 var right_side_fruit_flash_ms: float = 0.0
+var left_side_fruit_sweep_ms: float = 0.0
+var right_side_fruit_sweep_ms: float = 0.0
 
 var pellets_left_left: int = 0
 var pellets_left_right: int = 0
@@ -63,6 +68,9 @@ var sfx_fruit_left: bool = false
 var sfx_fruit_right: bool = false
 var sfx_ghost_eaten: bool = false
 var sfx_game_over: bool = false
+var hitstop_ms: float = 0.0
+var ghost_eat_chain: int = 0
+var juice_popups: Array = [] # Array[Dictionary]
 
 var _rng: RandomNumberGenerator = RandomNumberGenerator.new()
 var _half_layouts: Array = [] # Array[Array[Array[int]]]
@@ -88,6 +96,11 @@ func init_from_board(board_model: BoardModel) -> void:
 	right_side_clear_progress = 1.0 if pellets_left_right == 0 else 0.0
 	left_side_fruit_flash_ms = 0.0
 	right_side_fruit_flash_ms = 0.0
+	left_side_fruit_sweep_ms = 0.0
+	right_side_fruit_sweep_ms = 0.0
+	hitstop_ms = 0.0
+	ghost_eat_chain = 0
+	juice_popups = []
 	_load_half_layout_pool()
 	_sync_fruit_actives()
 
@@ -129,11 +142,15 @@ func step(dt: float) -> void:
 	# timer
 	time_remaining_s = max(0.0, time_remaining_s - dt)
 
+	var fear_prev: float = fear_ms
 	if fear_ms > 0.0:
 		fear_ms = max(0.0, fear_ms - dt * 1000.0)
+		if fear_prev > 0.0 and fear_ms <= 0.0:
+			ghost_eat_chain = 0
 
 	_decrement_incap_wait_ms(dt)
 	_decrement_fruit_flash_ms(dt)
+	_tick_juice_popups(dt)
 
 	# Pac movement with substeps (matches TS structure)
 	var sub_dt: float = dt / float(PAC_SUBSTEPS_PER_FRAME)
@@ -156,6 +173,33 @@ func _clear_sfx_flags() -> void:
 	sfx_fruit_right = false
 	sfx_ghost_eaten = false
 	sfx_game_over = false
+	hitstop_ms = 0.0
+
+func _add_hitstop(ms: float) -> void:
+	hitstop_ms = maxf(hitstop_ms, ms)
+
+func _add_score_popup(tile: Vector2i, text: String, color: Color, scale: float = 1.0) -> void:
+	var d: Dictionary = {
+		"pos": Vector2(float(tile.x) + 0.5, float(tile.y) + 0.5),
+		"text": text,
+		"color": color,
+		"ms": JUICE_POPUP_DURATION_MS,
+		"total_ms": JUICE_POPUP_DURATION_MS,
+		"scale": scale,
+	}
+	juice_popups.append(d)
+
+func _tick_juice_popups(dt: float) -> void:
+	var dms: float = dt * 1000.0
+	var next: Array = []
+	for p_v: Variant in juice_popups:
+		var p: Dictionary = p_v as Dictionary
+		var ms: float = float(p.get("ms", 0.0)) - dms
+		if ms <= 0.0:
+			continue
+		p["ms"] = ms
+		next.append(p)
+	juice_popups = next
 
 func _init_ghosts() -> void:
 	ghosts = []
@@ -221,6 +265,8 @@ func _decrement_fruit_flash_ms(dt: float) -> void:
 	var dms: float = dt * 1000.0
 	left_side_fruit_flash_ms = maxf(0.0, left_side_fruit_flash_ms - dms)
 	right_side_fruit_flash_ms = maxf(0.0, right_side_fruit_flash_ms - dms)
+	left_side_fruit_sweep_ms = maxf(0.0, left_side_fruit_sweep_ms - dms)
+	right_side_fruit_sweep_ms = maxf(0.0, right_side_fruit_sweep_ms - dms)
 
 func _reverse_all_ghost_dirs() -> void:
 	for g_v: Variant in ghosts:
@@ -582,16 +628,22 @@ func _check_pac_ghost_collisions() -> void:
 			continue
 
 		if fear_ms > 0.0:
+			ghost_eat_chain += 1
+			var chain_pow: int = max(0, ghost_eat_chain - 1)
+			var eat_score: int = GHOST_EATEN_COMBO_BASE * int(pow(2.0, float(chain_pow)))
 			g.set("is_incapacitated", true)
 			g.set("incapacitated_phase", INCAP_PHASE_ROAM)
 			g.set("incapacitated_roams_left", 3)
 			g.set("incapacitated_wait_ms", 0.0)
 			g.set("dest", random_walkable_tile_excluding(g.get("pos") as Vector2i))
-			score += GHOST_EATEN_SCORE
+			score += eat_score
+			_add_score_popup(pac_tile(), str(eat_score), Color(0.95, 0.98, 1.0, 1.0), 1.25)
+			_add_hitstop(75.0)
 			sfx_ghost_eaten = true
 			return
 
 		is_game_over = true
+		_add_hitstop(95.0)
 		sfx_game_over = true
 		return
 
@@ -779,8 +831,10 @@ func _collect_pellets() -> void:
 		score += PELLET_SCORE
 		if is_power:
 			fear_ms = FEAR_DURATION_MS
+			ghost_eat_chain = 0
 			_reverse_all_ghost_dirs()
 			sfx_power_pellet = true
+			_add_hitstop(45.0)
 		else:
 			sfx_pellet = true
 		if tx < 14:
@@ -877,6 +931,9 @@ func _handle_fruit_collection() -> void:
 		score += FRUIT_SCORE
 		fruit_active_left = false
 		right_side_fruit_flash_ms = FRUIT_SIDE_FLASH_DURATION_MS
+		right_side_fruit_sweep_ms = FRUIT_SWEEP_DURATION_MS
+		_add_score_popup(left_fruit, str(FRUIT_SCORE), Color(0.99, 0.72, 0.2, 1.0), 1.2)
+		_add_hitstop(60.0)
 		sfx_fruit_left = true
 	elif fruit_active_right and pt == right_fruit:
 		var next_left_src: Array = _random_half_layout_copy()
@@ -884,6 +941,9 @@ func _handle_fruit_collection() -> void:
 		score += FRUIT_SCORE
 		fruit_active_right = false
 		left_side_fruit_flash_ms = FRUIT_SIDE_FLASH_DURATION_MS
+		left_side_fruit_sweep_ms = FRUIT_SWEEP_DURATION_MS
+		_add_score_popup(right_fruit, str(FRUIT_SCORE), Color(0.99, 0.72, 0.2, 1.0), 1.2)
+		_add_hitstop(60.0)
 		sfx_fruit_right = true
 
 	# Re-sync in same tick (web parity): allows both fruits to be visible if both halves are cleared.

@@ -9,6 +9,7 @@
 [ext_resource type="Script" uid="uid://c4a0o6rxjv1hp" path="res://scripts/board/TileOverlayView.gd" id="7_1"]
 [ext_resource type="Script" uid="uid://jgp276mnk30t" path="res://scripts/rendering/WallDarkenView.gd" id="8_1"]
 [ext_resource type="Script" path="res://scripts/audio/GameAudio.gd" id="9_1"]
+[ext_resource type="Script" path="res://scripts/rendering/ScorePopupsView.gd" id="10_1"]
 
 [node name="GameRoot" type="Node2D" unique_id=1547558552]
 script = ExtResource("1_1")
@@ -40,3 +41,6 @@ script = ExtResource("4_1")
 
 [node name="GhostPaths" type="Node2D" parent="Debug" unique_id=1502940780]
 script = ExtResource("5_1")
+
+[node name="ScorePopups" type="Node2D" parent="Debug"]
+script = ExtResource("10_1")
