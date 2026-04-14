@@ -9,8 +9,12 @@ const DIR_DOWN: int = 1
 const DIR_LEFT: int = 2
 const DIR_RIGHT: int = 3
 
-const LEVEL_DURATION_S: float = 600.0
+const LEVEL_DURATION_S: float = 300.0
 const PAC_TILES_PER_SEC: float = 5.0
+## After this fraction of level time has elapsed, Pac reaches max ramp speed; then speed stays flat.
+const PAC_SPEED_MAX_RAMP: float = 11.0
+const GHOST_SPEED_MAX_RAMP: float = 12.0
+const SPEED_RAMP_COMPLETE_FRACTION: float = 0.9
 const PAC_SUBSTEPS_PER_FRAME: int = 6
 const PELLET_SCORE: int = 10
 const PELLET_COLLECT_RADIUS_TILES: float = 0.35
@@ -59,6 +63,9 @@ var pellets_left_right: int = 0
 var board: BoardModel
 var score: int = 0
 var time_remaining_s: float = LEVEL_DURATION_S
+## Updated each `step` from time ramp (used for Pac + ghost base `speed_tiles_per_sec`).
+var _pac_speed_ramped: float = PAC_TILES_PER_SEC
+var _ghost_speed_ramped: float = GHOST_TILES_PER_SEC
 var is_game_over: bool = false
 
 var pac_pos: Vector2 = Vector2(1.5, 1.5) # tile coords, continuous
@@ -88,6 +95,8 @@ func init_from_board(board_model: BoardModel) -> void:
 	_init_ghosts()
 	score = 0
 	time_remaining_s = LEVEL_DURATION_S
+	_pac_speed_ramped = PAC_TILES_PER_SEC
+	_ghost_speed_ramped = GHOST_TILES_PER_SEC
 	# Match TS PAC_SPAWN = { x: 13, y: 26 } and ensure spawn is never inside a blocked tile.
 	var preferred_spawn: Vector2i = Vector2i(13, 26)
 	var spawn_tile: Vector2i = board.nearest_pac_spawn_tile(preferred_spawn)
@@ -151,6 +160,13 @@ func step(dt: float) -> void:
 
 	# timer
 	time_remaining_s = max(0.0, time_remaining_s - dt)
+	if time_remaining_s <= 0.0:
+		time_remaining_s = 0.0
+		if not is_game_over:
+			is_game_over = true
+			sfx_game_over = true
+			_add_hitstop(95.0)
+		return
 
 	var fear_prev: float = fear_ms
 	if fear_ms > 0.0:
@@ -163,6 +179,8 @@ func step(dt: float) -> void:
 	_decrement_fruit_flash_ms(dt)
 	_update_hue_shift(dt)
 	_tick_juice_popups(dt)
+
+	_apply_time_ramp_speeds()
 
 	# Pac movement with substeps (matches TS structure)
 	var sub_dt: float = dt / float(PAC_SUBSTEPS_PER_FRAME)
@@ -177,6 +195,26 @@ func step(dt: float) -> void:
 	_check_pac_ghost_collisions()
 
 	_update_side_clear_progress(float(dt))
+
+func _time_speed_ramp_u() -> float:
+	var total: float = LEVEL_DURATION_S
+	if total <= 0.0001:
+		return 1.0
+	var elapsed: float = total - time_remaining_s
+	var denom: float = total * SPEED_RAMP_COMPLETE_FRACTION
+	if denom <= 0.0001:
+		return 1.0
+	return clampf(elapsed / denom, 0.0, 1.0)
+
+
+func _apply_time_ramp_speeds() -> void:
+	var u: float = _time_speed_ramp_u()
+	_pac_speed_ramped = lerpf(PAC_TILES_PER_SEC, PAC_SPEED_MAX_RAMP, u)
+	_ghost_speed_ramped = lerpf(GHOST_TILES_PER_SEC, GHOST_SPEED_MAX_RAMP, u)
+	for g_v: Variant in ghosts:
+		var g: RefCounted = g_v as RefCounted
+		g.set("speed_tiles_per_sec", _ghost_speed_ramped)
+
 
 func _clear_sfx_flags() -> void:
 	sfx_pellet = false
@@ -883,7 +921,7 @@ func _opposite_dir(dir: int) -> int:
 func _advance_pac(dt: float, desired: int) -> void:
 	var dir: int = _resolve_pac_dir_for_frame(desired)
 	var v: Vector2 = _dir_to_vec(dir)
-	var speed: float = PAC_TILES_PER_SEC
+	var speed: float = _pac_speed_ramped
 
 	var x: float = pac_pos.x
 	var y: float = pac_pos.y

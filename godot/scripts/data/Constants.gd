@@ -3,7 +3,7 @@ class_name Constants
 
 const PELLET_SCORE: int = 10
 const FRUIT_SCORE: int = 200
-const LEVEL_DURATION_S: float = 600.0
+const LEVEL_DURATION_S: float = 300.0
 
 const PAC_TILES_PER_SEC: float = 5.0
 const GHOST_TILES_PER_SEC: float = 3.0

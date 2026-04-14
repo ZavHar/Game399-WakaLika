@@ -78,7 +78,7 @@ func _update_uniforms() -> void:
 	if _model != null:
 		_shader_mat.set_shader_parameter("left_prog", float(_model.get("left_side_clear_progress")))
 		_shader_mat.set_shader_parameter("right_prog", float(_model.get("right_side_clear_progress")))
-		_shader_mat.set_shader_parameter("time_s", 600.0 - float(_model.get("time_remaining_s")))
+		_shader_mat.set_shader_parameter("time_s", Constants.LEVEL_DURATION_S - float(_model.get("time_remaining_s")))
 	_shader_mat.set_shader_parameter("dark_max", SIDE_CLEAR_DARK_MAX)
 	_shader_mat.set_shader_parameter("seam_falloff_tiles", SIDE_CLEAR_SEAM_FALLOFF_TILES)
 

@@ -1,9 +1,9 @@
 extends Control
 
-const PULSE_INTERVAL_S: float = 1.8
-const PULSE_LIFE_S: float = 1.15
-const PULSE_MAX_EXPAND_PX: float = 34.0
-const PULSE_MAX_ALPHA: float = 0.36
+const PULSE_INTERVAL_S: float = 60.0/136.0
+const PULSE_LIFE_S: float = 0.5
+const PULSE_MAX_EXPAND_PX: float = 100.0
+const PULSE_MAX_ALPHA: float = 0.75
 const PULSE_STROKE_PX: float = 2.5
 const PULSE_COLOR: Color = Color(0.30, 0.65, 1.0, 1.0)
 

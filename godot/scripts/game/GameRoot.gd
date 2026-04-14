@@ -95,7 +95,7 @@ func _boot_after_main() -> void:
 		if score_label != null:
 			_set_score_label_score(0)
 		if time_label != null:
-			time_label.text = "600"
+			time_label.text = str(int(Constants.LEVEL_DURATION_S))
 		if game_audio != null:
 			game_audio.try_start_music()
 	else:
@@ -106,6 +106,8 @@ func _boot_after_main() -> void:
 
 func _physics_process(delta: float) -> void:
 	_handle_input()
+	if game_audio != null:
+		game_audio.update_ghost_ambience(_model, delta)
 	if _hitstop_left_s > 0.0:
 		_hitstop_left_s = maxf(0.0, _hitstop_left_s - delta)
 		_apply_hud_juice(delta)

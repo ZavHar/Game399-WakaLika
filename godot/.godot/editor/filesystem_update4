@@ -23,3 +23,5 @@ res://scripts/rendering/BoardFrameView.gd
 res://scripts/ui/BoardPulseOverlay.gd
 res://scripts/rendering/PlayAreaBackgroundView.gd
 res://scripts/rendering/FloatingParticlesView.gd
+res://scripts/rendering/ScorePopupsView.gd
+res://scripts/data/Constants.gd

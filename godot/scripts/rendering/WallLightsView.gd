@@ -119,7 +119,7 @@ func _update_uniforms() -> void:
 	var pac: Vector2 = _model.get("pac_pos") as Vector2
 	_shader_mat.set_shader_parameter("pac_pos", Vector2(pac.x, pac.y))
 	_shader_mat.set_shader_parameter("pac_alpha", PAC_LIGHT_ALPHA_MAX)
-	var t: float = 600.0 - float(_model.get("time_remaining_s"))
+	var t: float = Constants.LEVEL_DURATION_S - float(_model.get("time_remaining_s"))
 	var ambient_mul: float = 0.92 + 0.08 * (0.5 + 0.5 * sin(t * 1.2))
 	_shader_mat.set_shader_parameter("ghost_alpha", GHOST_LIGHT_ALPHA_MAX * ambient_mul)
 	_shader_mat.set_shader_parameter("ghost_radius", GHOST_LIGHT_RADIUS_TILES)
