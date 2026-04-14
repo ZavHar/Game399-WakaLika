@@ -3,14 +3,18 @@ extends Node2D
 const CELL_PX: float = 18.0
 const GHOST_TRAIL_MAX_SAMPLES: int = 20
 const GHOST_TRAIL_LIFE_S: float = 0.70
-const GHOST_TRAIL_MIN_SAMPLE_DIST_SQ: float = 0.05
+const GHOST_TRAIL_MIN_SAMPLE_DIST_SQ: float = 0.24
 
 var _model: RefCounted = null
 var _trail_by_id: Dictionary = {}
+var _ghost_tex: Texture2D = null
 
 func set_model(m: RefCounted) -> void:
 	_model = m
 	queue_redraw()
+
+func _ready() -> void:
+	_ghost_tex = _load_svg_texture("res://assets/characters/ghost-base.svg", 128)
 
 func _process(delta: float) -> void:
 	_decay_ghost_trails(delta)
@@ -33,8 +37,9 @@ func _draw() -> void:
 		var gv_t: Vector2 = GhostInterpolation.visual_center_fractional(from_t, to_t, interp_t, 28, 36)
 		var id_t: String = g_trail.get("id") as String
 		var phase_t: String = str(g_trail.get("incapacitated_phase"))
-		_push_ghost_trail(id_t, Vector2(gv_t.x, gv_t.y))
-		_draw_ghost_trail(id_t, phase_t)
+		var col_t: Color = _visual_color_for_ghost(id_t, g_trail)
+		_push_ghost_trail(id_t, Vector2(gv_t.x, gv_t.y), col_t, phase_t)
+		_draw_ghost_trail(id_t)
 
 	# Pass 2: draw ghost bodies/effects on top of trails.
 	for g_v: Variant in ghosts:
@@ -56,7 +61,11 @@ func _draw() -> void:
 			var cx: float = p.x * CELL_PX
 			var cy: float = p.y * CELL_PX
 			var center: Vector2 = Vector2(cx, cy)
-			draw_circle(center, CELL_PX * 0.30, base)
+			if _ghost_tex != null:
+				var sz: float = CELL_PX * 0.95
+				draw_texture_rect(_ghost_tex, Rect2(cx - sz * 0.5, cy - sz * 0.5, sz, sz), false, base)
+			else:
+				draw_circle(center, CELL_PX * 0.30, base)
 			if bool(g.get("is_incapacitated")):
 				_draw_incap_ghost_fx(center, phase)
 
@@ -101,7 +110,7 @@ func _ghost_render_positions(p: Vector2, w: int, h: int) -> Array:
 		out.append(Vector2(p.x, p.y - float(h)))
 	return out
 
-func _push_ghost_trail(id: String, p: Vector2) -> void:
+func _push_ghost_trail(id: String, p: Vector2, col: Color, phase: String) -> void:
 	var arr: Array = _trail_by_id.get(id, []) as Array
 	if not arr.is_empty():
 		var last: Dictionary = arr[arr.size() - 1] as Dictionary
@@ -109,7 +118,7 @@ func _push_ghost_trail(id: String, p: Vector2) -> void:
 		if lp.distance_squared_to(p) < GHOST_TRAIL_MIN_SAMPLE_DIST_SQ:
 			_trail_by_id[id] = arr
 			return
-	arr.append({"p": p, "life_s": GHOST_TRAIL_LIFE_S})
+	arr.append({"p": p, "life_s": GHOST_TRAIL_LIFE_S, "col": col, "phase": phase})
 	if arr.size() > GHOST_TRAIL_MAX_SAMPLES:
 		arr.remove_at(0)
 	_trail_by_id[id] = arr
@@ -129,7 +138,7 @@ func _decay_ghost_trails(delta: float) -> void:
 			next.append(t)
 		_trail_by_id[k] = next
 
-func _draw_ghost_trail(id: String, phase: String) -> void:
+func _draw_ghost_trail(id: String) -> void:
 	var arr: Array = _trail_by_id.get(id, []) as Array
 	var n: int = arr.size()
 	if n <= 1:
@@ -137,13 +146,22 @@ func _draw_ghost_trail(id: String, phase: String) -> void:
 	for i: int in range(n - 1, -1, -1):
 		var t: Dictionary = arr[i] as Dictionary
 		var p: Vector2 = t.get("p", Vector2.ZERO) as Vector2
+		var col_snap: Color = t.get("col", Color(0.95, 0.96, 1.0, 1.0)) as Color
+		var phase_snap: String = str(t.get("phase", ""))
 		var life_k: float = clampf(float(t.get("life_s", 0.0)) / GHOST_TRAIL_LIFE_S, 0.0, 1.0)
 		var k: float = maxf(life_k, float(i + 1) / float(n) * 0.6)
-		var alpha: float = (0.08 + 0.08 * k) * (1.2 if phase == "return_to_house" else 1.0)
-		var col: Color = Color(0.95, 0.96, 1.0, alpha)
+		# Fade to true zero near end; avoid a visible "last frame pop" on removal.
+		var alpha: float = (0.22 * pow(life_k, 1.35)) * (1.2 if phase_snap == "return_to_house" else 1.0)
+		var col: Color = Color(col_snap.r, col_snap.g, col_snap.b, alpha)
 		for rp_v: Variant in _ghost_render_positions(p, 28, 36):
 			var rp: Vector2 = rp_v as Vector2
-			draw_circle(Vector2(rp.x * CELL_PX, rp.y * CELL_PX), CELL_PX * (0.12 + 0.1 * k), col)
+			var cx: float = rp.x * CELL_PX
+			var cy: float = rp.y * CELL_PX
+			if _ghost_tex != null:
+				var sz: float = CELL_PX * (0.55 + 0.43 * k)
+				draw_texture_rect(_ghost_tex, Rect2(cx - sz * 0.5, cy - sz * 0.5, sz, sz), false, col)
+			else:
+				draw_circle(Vector2(cx, cy), CELL_PX * (0.12 + 0.1 * k), col)
 
 func _draw_incap_ghost_fx(center: Vector2, phase: String) -> void:
 	var pulse: float = 0.5
@@ -154,3 +172,18 @@ func _draw_incap_ghost_fx(center: Vector2, phase: String) -> void:
 	if phase == "waiting_in_house":
 		ring_a *= 0.8
 	draw_arc(center, CELL_PX * 0.37, 0.0, TAU, 22, Color(0.95, 0.97, 1.0, ring_a), 1.5, true)
+
+func _load_svg_texture(res_path: String, raster_px: int) -> Texture2D:
+	if not FileAccess.file_exists(res_path):
+		push_error("SVG not found: %s" % res_path)
+		return null
+	var bytes: PackedByteArray = FileAccess.get_file_as_bytes(res_path)
+	if bytes.size() == 0:
+		push_error("SVG empty/unreadable: %s" % res_path)
+		return null
+	var img: Image = Image.new()
+	var err: Error = img.load_svg_from_buffer(bytes, float(raster_px))
+	if err != OK:
+		push_error("SVG decode failed (%s): %s" % [str(err), res_path])
+		return null
+	return ImageTexture.create_from_image(img)
