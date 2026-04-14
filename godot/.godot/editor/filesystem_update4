@@ -17,3 +17,4 @@ res://scripts/rendering/WallDarkenView.gd
 res://scripts/rendering/WallLightsView.gd
 res://scenes/GameRoot.tscn
 res://scripts/audio/GameAudio.gd
+res://scripts/ui/PulseNumberLabel.gd

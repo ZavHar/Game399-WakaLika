@@ -3,6 +3,7 @@ extends Node2D
 const CELL_PX: float = 18.0
 const GHOST_TRAIL_MAX_SAMPLES: int = 20
 const GHOST_TRAIL_LIFE_S: float = 0.70
+const GHOST_TRAIL_MIN_SAMPLE_DIST_SQ: float = 0.05
 
 var _model: RefCounted = null
 var _trail_by_id: Dictionary = {}
@@ -22,6 +23,20 @@ func _draw() -> void:
 	if typeof(ghosts_v) != TYPE_ARRAY:
 		return
 	var ghosts: Array = ghosts_v as Array
+
+	# Pass 1: update trail samples and draw all trails first (keeps trails behind entities).
+	for g_v: Variant in ghosts:
+		var g_trail: RefCounted = g_v as RefCounted
+		var from_t: Vector2i = g_trail.get("anim_from") as Vector2i
+		var to_t: Vector2i = g_trail.get("anim_to") as Vector2i
+		var interp_t: float = float(g_trail.get("anim_t"))
+		var gv_t: Vector2 = GhostInterpolation.visual_center_fractional(from_t, to_t, interp_t, 28, 36)
+		var id_t: String = g_trail.get("id") as String
+		var phase_t: String = str(g_trail.get("incapacitated_phase"))
+		_push_ghost_trail(id_t, Vector2(gv_t.x, gv_t.y))
+		_draw_ghost_trail(id_t, phase_t)
+
+	# Pass 2: draw ghost bodies/effects on top of trails.
 	for g_v: Variant in ghosts:
 		var g: RefCounted = g_v as RefCounted
 		var from: Vector2i = g.get("anim_from") as Vector2i
@@ -33,8 +48,6 @@ func _draw() -> void:
 		var id: String = g.get("id") as String
 		var base: Color = _visual_color_for_ghost(id, g)
 		var phase: String = str(g.get("incapacitated_phase"))
-		_push_ghost_trail(id, Vector2(gx, gy))
-		_draw_ghost_trail(id, phase)
 
 		# gv is tile-space center (matches pac_pos convention).
 		var render_positions: Array = _ghost_render_positions(Vector2(gx, gy), 28, 36)
@@ -93,7 +106,7 @@ func _push_ghost_trail(id: String, p: Vector2) -> void:
 	if not arr.is_empty():
 		var last: Dictionary = arr[arr.size() - 1] as Dictionary
 		var lp: Vector2 = last.get("p", p) as Vector2
-		if lp.distance_squared_to(p) < 0.001:
+		if lp.distance_squared_to(p) < GHOST_TRAIL_MIN_SAMPLE_DIST_SQ:
 			_trail_by_id[id] = arr
 			return
 	arr.append({"p": p, "life_s": GHOST_TRAIL_LIFE_S})

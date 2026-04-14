@@ -1,7 +1,8 @@
-[gd_scene load_steps=3 format=3 uid="uid://bmainwaka001"]
+[gd_scene load_steps=4 format=3 uid="uid://bmainwaka001"]
 
 [ext_resource type="Script" path="res://scripts/Main.gd" id="1_main"]
 [ext_resource type="PackedScene" uid="uid://cupgudx3cviym" path="res://scenes/GameRoot.tscn" id="2_gr"]
+[ext_resource type="Script" path="res://scripts/ui/PulseNumberLabel.gd" id="3_scorepulse"]
 
 [node name="Main" type="Control"]
 layout_mode = 3
@@ -15,21 +16,28 @@ script = ExtResource("1_main")
 [node name="CanvasLayerHud" type="CanvasLayer" parent="."]
 layer = 10
 
-[node name="ScoreLabel" type="Label" parent="CanvasLayerHud"]
+[node name="ScoreLabel" type="Control" parent="CanvasLayerHud"]
 layout_mode = 0
-offset_left = 16.0
-offset_top = 10.0
-offset_right = 460.0
-offset_bottom = 42.0
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -150.0
+offset_top = -34.0
+offset_right = 150.0
+offset_bottom = -10.0
 mouse_filter = 2
-theme_override_font_sizes/font_size = 18
-text = "Score: 0"
+script = ExtResource("3_scorepulse")
+prefix = "Score: "
+font_size = 18
 
 [node name="TimeLabel" type="Label" parent="CanvasLayerHud"]
 layout_mode = 0
-offset_left = 182.0
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -80.0
 offset_top = 10.0
-offset_right = 322.0
+offset_right = 80.0
 offset_bottom = 48.0
 mouse_filter = 2
 theme_override_font_sizes/font_size = 28

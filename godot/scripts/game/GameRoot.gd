@@ -12,7 +12,7 @@ var _accumulator_s: float = 0.0
 var _sim_time_s: float = 0.0
 var _hitstop_left_s: float = 0.0
 
-var score_label: Label
+var score_label: Control
 var time_label: Label
 @onready var walls_view: Node2D = $Board
 @onready var wall_lights_view: Node2D = $WallLights
@@ -35,13 +35,13 @@ func _boot_after_main() -> void:
 	_accumulator_s = 0.0
 	_sim_time_s = 0.0
 	_hitstop_left_s = 0.0
-	score_label = get_tree().get_first_node_in_group("game_score_hud") as Label
+	score_label = get_tree().get_first_node_in_group("game_score_hud") as Control
 	time_label = get_tree().get_first_node_in_group("game_time_hud") as Label
 	if score_label == null or time_label == null:
 		push_error("GameRoot: Main should register ScoreLabel/TimeLabel groups.")
 	else:
-		score_label.text = "Loading..."
-		time_label.text = "Time: --"
+		_set_score_label_raw("Loading...")
+		time_label.text = "--"
 	if walls_view.has_method("load_default_layout"):
 		walls_view.call("load_default_layout")
 		var board: BoardModel = walls_view.call("get_board_model") as BoardModel
@@ -80,14 +80,14 @@ func _boot_after_main() -> void:
 		if score_popups_view.has_method("set_model"):
 			score_popups_view.call("set_model", _model)
 		if score_label != null:
-			score_label.text = "Score: 0"
+			_set_score_label_score(0)
 		if time_label != null:
 			time_label.text = "600"
 		if game_audio != null:
 			game_audio.try_start_music()
 	else:
 		if score_label != null:
-			score_label.text = "Load Error"
+			_set_score_label_raw("Load Error")
 		if time_label != null:
 			time_label.text = "--"
 
@@ -130,9 +130,9 @@ func _step_simulation(dt: float) -> void:
 		var time_remaining_s: float = float(_model.get("time_remaining_s"))
 		if score_label != null:
 			if bool(_model.get("is_game_over")):
-				score_label.text = "GAME OVER   Score: %d" % score
+				_set_score_label_raw("GAME OVER   Score: %d" % score)
 			else:
-				score_label.text = "Score: %d" % score
+				_set_score_label_score(score)
 		if time_label != null:
 			time_label.text = str(int(time_remaining_s))
 
@@ -152,6 +152,18 @@ func _apply_hud_juice(_delta: float) -> void:
 		if time_label != null:
 			time_label.modulate = Color(1, 1, 1, 1)
 		score_label.modulate = Color(1, 1, 1, 1)
+
+func _set_score_label_raw(text: String) -> void:
+	if score_label == null:
+		return
+	if score_label.has_method("set_raw_text"):
+		score_label.call("set_raw_text", text)
+
+func _set_score_label_score(score: int) -> void:
+	if score_label == null:
+		return
+	if score_label.has_method("set_score"):
+		score_label.call("set_score", score)
 
 func _handle_input() -> void:
 	if _model == null:

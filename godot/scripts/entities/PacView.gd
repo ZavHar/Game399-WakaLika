@@ -3,6 +3,7 @@ extends Node2D
 const CELL_PX: float = 18.0
 const TRAIL_MAX_SAMPLES: int = 24
 const TRAIL_LIFE_S: float = 0.72
+const TRAIL_MIN_SAMPLE_DIST_SQ: float = 0.045
 
 var _model: RefCounted = null
 var _trail: Array = [] # Array[Dictionary]
@@ -46,7 +47,7 @@ func _push_trail_sample() -> void:
 	if not _trail.is_empty():
 		var last: Dictionary = _trail[_trail.size() - 1] as Dictionary
 		var lp: Vector2 = last.get("p", p) as Vector2
-		if lp.distance_squared_to(p) < 0.015:
+		if lp.distance_squared_to(p) < TRAIL_MIN_SAMPLE_DIST_SQ:
 			return
 	_trail.append({"p": p, "life_s": TRAIL_LIFE_S})
 	if _trail.size() > TRAIL_MAX_SAMPLES:

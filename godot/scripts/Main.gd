@@ -6,7 +6,7 @@ const BOARD_VIEWPORT_SIZE: Vector2i = Vector2i(504, 648)
 
 func _ready() -> void:
 	Engine.physics_ticks_per_second = TARGET_FPS
-	var score_hud: Label = $CanvasLayerHud/ScoreLabel as Label
+	var score_hud: Control = $CanvasLayerHud/ScoreLabel as Control
 	var time_hud: Label = $CanvasLayerHud/TimeLabel as Label
 	score_hud.add_to_group("game_score_hud")
 	time_hud.add_to_group("game_time_hud")
