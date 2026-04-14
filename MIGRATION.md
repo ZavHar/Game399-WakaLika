@@ -40,6 +40,10 @@ This plan assumes your current project has:
     - Level timer: **600 seconds** (`LEVEL_DURATION = 600`)
     - Fear duration: **10,000 ms** (`FEAR_DURATION_MS = 10_000`)
     - Fear “flash” window: **2,000 ms** (`FEAR_FLASH_MS = 2_000`)
+  - **Fruit gameplay**
+    - Keep left/right fruit spawn tiles and side-specific activation logic.
+    - Preserve fruit collect behavior and any side-clear interactions/effects triggered by fruit.
+    - Preserve fruit scoring/events parity with the web build.
 
 Deliverable:
 - A short checklist of “must match” behaviors.
@@ -121,10 +125,15 @@ Tasks:
   - Buffered input direction and “commit turn when centered” rule
   - Prevent entering walls/exit/ghost house
 - Implement pellet collection rules and scoring.
+- Implement fruit systems from web build:
+  - side-specific fruit spawn/active state (left/right)
+  - fruit pickup collision and score/event handling
+  - side-clear progress + flash/effect triggers tied to fruit behavior
 
 Deliverables:
 - Pac moves correctly around walls and eats pellets.
 - Level completion detection (pellets cleared) matches baseline.
+- Fruit appears, can be collected, and triggers matching gameplay effects.
 
 ## Phase 4 — Port ghost movement and BFS pathfinding (2–3 days)
 Goal: match ghost stepping and routing.
@@ -204,6 +213,7 @@ Deliverables:
 ## Definition of “done”
 - Godot build plays end-to-end with:
   - Same map(s), pellets, scoring, timer
+  - Fruit spawning/collection/effects parity
   - Ghost AI behavior parity
   - Audio parity
   - Stable level import pipeline

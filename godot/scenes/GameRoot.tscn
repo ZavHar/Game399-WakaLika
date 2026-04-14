@@ -8,9 +8,13 @@
 [ext_resource type="Script" uid="uid://7qdgnblhjqdg" path="res://scripts/rendering/WallLightsView.gd" id="6_1"]
 [ext_resource type="Script" uid="uid://c4a0o6rxjv1hp" path="res://scripts/board/TileOverlayView.gd" id="7_1"]
 [ext_resource type="Script" uid="uid://jgp276mnk30t" path="res://scripts/rendering/WallDarkenView.gd" id="8_1"]
+[ext_resource type="Script" path="res://scripts/audio/GameAudio.gd" id="9_1"]
 
 [node name="GameRoot" type="Node2D" unique_id=1547558552]
 script = ExtResource("1_1")
+
+[node name="Audio" type="Node" parent="."]
+script = ExtResource("9_1")
 
 [node name="Board" type="Node2D" parent="." unique_id=465094160]
 script = ExtResource("2_1")
