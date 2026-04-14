@@ -18,6 +18,8 @@ var time_label: Label
 @onready var wall_lights_view: Node2D = $WallLights
 @onready var wall_darken_view: Node2D = $WallDarken
 @onready var tile_overlay_view: Node2D = $TileOverlay
+@onready var play_area_background_view: Node2D = $PlayAreaBackground
+@onready var board_frame_view: Node2D = $BoardFrame
 @onready var pac_view: Node2D = $Entities/Pac
 @onready var ghosts_view: Node2D = $Entities/Ghosts
 @onready var ghost_paths_view: Node2D = $Debug/GhostPaths
@@ -28,6 +30,7 @@ var _model: RefCounted = null
 var _last_board_revision: int = 0
 var _show_ghost_paths: bool = false
 var _toggle_paths_key_was_down: bool = false
+var _vacuum_key_was_down: bool = false
 
 func _ready() -> void:
 	# Main adds the HUD label to group `game_status_hud` in _ready; run boot after that.
@@ -39,6 +42,7 @@ func _boot_after_main() -> void:
 	_hitstop_left_s = 0.0
 	_show_ghost_paths = false
 	_toggle_paths_key_was_down = false
+	_vacuum_key_was_down = false
 	score_label = get_tree().get_first_node_in_group("game_score_hud") as Control
 	time_label = get_tree().get_first_node_in_group("game_time_hud") as Label
 	if score_label == null or time_label == null:
@@ -57,6 +61,10 @@ func _boot_after_main() -> void:
 			pac_view.call("set_model", _model)
 		if walls_view.has_method("set_model"):
 			walls_view.call("set_model", _model)
+		if play_area_background_view.has_method("set_model"):
+			play_area_background_view.call("set_model", _model)
+		if board_frame_view.has_method("set_model"):
+			board_frame_view.call("set_model", _model)
 		if wall_lights_view.has_method("set_model"):
 			wall_lights_view.call("set_model", _model)
 		if wall_darken_view.has_method("set_model"):
@@ -170,6 +178,9 @@ func _set_score_label_score(score: int) -> void:
 	if score_label.has_method("set_score"):
 		score_label.call("set_score", score)
 
+func get_model() -> RefCounted:
+	return _model
+
 func _handle_input() -> void:
 	var toggle_down: bool = Input.is_key_pressed(KEY_P)
 	if toggle_down and not _toggle_paths_key_was_down:
@@ -177,6 +188,12 @@ func _handle_input() -> void:
 		if ghost_paths_view != null:
 			ghost_paths_view.visible = _show_ghost_paths
 	_toggle_paths_key_was_down = toggle_down
+
+	var vacuum_down: bool = Input.is_key_pressed(KEY_V)
+	if vacuum_down and not _vacuum_key_was_down and _model != null:
+		var cur_vacuum: bool = bool(_model.get("vacuum_mode"))
+		_model.set("vacuum_mode", not cur_vacuum)
+	_vacuum_key_was_down = vacuum_down
 
 	if _model == null:
 		return

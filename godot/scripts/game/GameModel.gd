@@ -27,6 +27,9 @@ const PAC_GHOST_COLLISION_RADIUS_TILES: float = 0.5
 const FRUIT_SCORE: int = 200
 const FRUIT_SIDE_FLASH_DURATION_MS: float = 250.0
 const LEFT_FRUIT_SPAWN_LOCAL: Vector2i = Vector2i(9, 17)
+const FRUIT_HUE_SHIFT_STEP: float = 0.8
+const FRUIT_HUE_SHIFT_LERP_PER_SEC: float = 0.5
+const VACUUM_RADIUS_TILES: float = 3.25
 const GHOST_EATEN_COMBO_BASE: int = 200
 const JUICE_POPUP_DURATION_MS: float = 800.0
 const FRUIT_SWEEP_DURATION_MS: float = 380.0
@@ -45,6 +48,9 @@ var left_side_fruit_flash_ms: float = 0.0
 var right_side_fruit_flash_ms: float = 0.0
 var left_side_fruit_sweep_ms: float = 0.0
 var right_side_fruit_sweep_ms: float = 0.0
+var hue_shift_amount: float = 0.0
+var hue_shift_target: float = 0.0
+var vacuum_mode: bool = false
 
 var pellets_left_left: int = 0
 var pellets_left_right: int = 0
@@ -98,6 +104,9 @@ func init_from_board(board_model: BoardModel) -> void:
 	right_side_fruit_flash_ms = 0.0
 	left_side_fruit_sweep_ms = 0.0
 	right_side_fruit_sweep_ms = 0.0
+	hue_shift_amount = 0.0
+	hue_shift_target = 0.0
+	vacuum_mode = false
 	hitstop_ms = 0.0
 	ghost_eat_chain = 0
 	juice_popups = []
@@ -150,6 +159,7 @@ func step(dt: float) -> void:
 
 	_decrement_incap_wait_ms(dt)
 	_decrement_fruit_flash_ms(dt)
+	_update_hue_shift(dt)
 	_tick_juice_popups(dt)
 
 	# Pac movement with substeps (matches TS structure)
@@ -267,6 +277,11 @@ func _decrement_fruit_flash_ms(dt: float) -> void:
 	right_side_fruit_flash_ms = maxf(0.0, right_side_fruit_flash_ms - dms)
 	left_side_fruit_sweep_ms = maxf(0.0, left_side_fruit_sweep_ms - dms)
 	right_side_fruit_sweep_ms = maxf(0.0, right_side_fruit_sweep_ms - dms)
+
+func _update_hue_shift(dt: float) -> void:
+	var diff: float = hue_shift_target - hue_shift_amount
+	diff = fposmod(diff + 0.5, 1.0) - 0.5
+	hue_shift_amount = fposmod(hue_shift_amount + diff * minf(1.0, FRUIT_HUE_SHIFT_LERP_PER_SEC * dt), 1.0)
 
 func _reverse_all_ghost_dirs() -> void:
 	for g_v: Variant in ghosts:
@@ -812,6 +827,10 @@ func _pac_pos_wrapped_fractional() -> Vector2:
 	return Vector2(fposmod(pac_pos.x, float(FULL_W)), fposmod(pac_pos.y, float(H)))
 
 func _collect_pellets() -> void:
+	if vacuum_mode:
+		_collect_pellets_vacuum()
+		return
+
 	var wp: Vector2 = _pac_pos_wrapped_fractional()
 	var tx: int = int(floor(wp.x))
 	var ty: int = int(floor(wp.y))
@@ -841,6 +860,34 @@ func _collect_pellets() -> void:
 		else:
 			pellets_left_right = max(0, pellets_left_right - 1)
 		_sync_fruit_actives()
+
+func _collect_pellets_vacuum() -> void:
+	var wp: Vector2 = _pac_pos_wrapped_fractional()
+	var r2: float = VACUUM_RADIUS_TILES * VACUUM_RADIUS_TILES
+	for y: int in range(H):
+		var row: Array = pellets[y] as Array
+		for x: int in range(FULL_W):
+			if not (row[x] as bool):
+				continue
+			var cx: float = float(x) + 0.5
+			var cy: float = float(y) + 0.5
+			if _torus_dist_sq_tile(wp.x, wp.y, cx, cy) > r2:
+				continue
+			var is_power: bool = board.tile_at(x, y) == Tile.Id.POWER_PELLET
+			row[x] = false
+			score += PELLET_SCORE
+			if is_power:
+				fear_ms = FEAR_DURATION_MS
+				_reverse_all_ghost_dirs()
+				sfx_power_pellet = true
+				_add_hitstop(45.0)
+			else:
+				sfx_pellet = true
+			if x < 14:
+				pellets_left_left = max(0, pellets_left_left - 1)
+			else:
+				pellets_left_right = max(0, pellets_left_right - 1)
+	_sync_fruit_actives()
 
 func _can_collect_at_pac_position() -> bool:
 	var wp: Vector2 = _pac_pos_wrapped_fractional()
@@ -931,6 +978,7 @@ func _handle_fruit_collection() -> void:
 		fruit_active_left = false
 		right_side_fruit_flash_ms = FRUIT_SIDE_FLASH_DURATION_MS
 		right_side_fruit_sweep_ms = FRUIT_SWEEP_DURATION_MS
+		hue_shift_target = fposmod(hue_shift_target + FRUIT_HUE_SHIFT_STEP, 1.0)
 		_add_score_popup(left_fruit, str(FRUIT_SCORE), Color(0.99, 0.72, 0.2, 1.0), 1.2)
 		_add_hitstop(60.0)
 		sfx_fruit_left = true
@@ -941,6 +989,7 @@ func _handle_fruit_collection() -> void:
 		fruit_active_right = false
 		left_side_fruit_flash_ms = FRUIT_SIDE_FLASH_DURATION_MS
 		left_side_fruit_sweep_ms = FRUIT_SWEEP_DURATION_MS
+		hue_shift_target = fposmod(hue_shift_target + FRUIT_HUE_SHIFT_STEP, 1.0)
 		_add_score_popup(right_fruit, str(FRUIT_SCORE), Color(0.99, 0.72, 0.2, 1.0), 1.2)
 		_add_hitstop(60.0)
 		sfx_fruit_right = true

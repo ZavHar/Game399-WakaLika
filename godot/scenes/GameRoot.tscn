@@ -10,12 +10,17 @@
 [ext_resource type="Script" uid="uid://jgp276mnk30t" path="res://scripts/rendering/WallDarkenView.gd" id="8_1"]
 [ext_resource type="Script" path="res://scripts/audio/GameAudio.gd" id="9_1"]
 [ext_resource type="Script" path="res://scripts/rendering/ScorePopupsView.gd" id="10_1"]
+[ext_resource type="Script" path="res://scripts/rendering/BoardFrameView.gd" id="11_1"]
+[ext_resource type="Script" path="res://scripts/rendering/PlayAreaBackgroundView.gd" id="12_1"]
 
 [node name="GameRoot" type="Node2D" unique_id=1547558552]
 script = ExtResource("1_1")
 
 [node name="Audio" type="Node" parent="."]
 script = ExtResource("9_1")
+
+[node name="PlayAreaBackground" type="Node2D" parent="."]
+script = ExtResource("12_1")
 
 [node name="Board" type="Node2D" parent="." unique_id=465094160]
 script = ExtResource("2_1")
@@ -28,6 +33,9 @@ script = ExtResource("8_1")
 
 [node name="TileOverlay" type="Node2D" parent="." unique_id=1532168488]
 script = ExtResource("7_1")
+
+[node name="BoardFrame" type="Node2D" parent="."]
+script = ExtResource("11_1")
 
 [node name="Entities" type="Node2D" parent="." unique_id=179486313]
 

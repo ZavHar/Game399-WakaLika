@@ -85,6 +85,10 @@ func _draw_wall_at(x: int, y: int, p: Vector2, cell: Vector2) -> void:
 	var region: Rect2i = _wall_autotile_script.call("atlas_region_for_mask8", mask8) as Rect2i
 
 	var tint: Color = WALL_TINT
+	if _model != null:
+		var hk: float = float(_model.get("hue_shift_amount"))
+		if hk > 0.0:
+			tint = _hue_shift(tint, hk)
 	tint.a = 1.0
 
 	draw_texture_rect_region(_wall_tex, Rect2(p, cell), region, tint, false)
@@ -148,3 +152,7 @@ func _read_active_layout_name() -> String:
 		return ""
 	var raw: String = f.get_as_text().strip_edges()
 	return raw
+
+func _hue_shift(c: Color, amount: float) -> Color:
+	var h: float = fposmod(c.h + amount, 1.0)
+	return Color.from_hsv(h, c.s, c.v, c.a)

@@ -19,3 +19,6 @@ res://scenes/GameRoot.tscn
 res://scripts/audio/GameAudio.gd
 res://scripts/ui/PulseNumberLabel.gd
 res://scenes/Main.tscn
+res://scripts/rendering/BoardFrameView.gd
+res://scripts/ui/BoardPulseOverlay.gd
+res://scripts/rendering/PlayAreaBackgroundView.gd
