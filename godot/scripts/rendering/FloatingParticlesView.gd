@@ -3,8 +3,9 @@ extends Node2D
 const MAX_PARTICLES: int = 88
 const MIN_SPEED: float = 6.0
 const MAX_SPEED: float = 18.0
-const MIN_RADIUS: float = 0.9
-const MAX_RADIUS: float = 2.2
+const MIN_RADIUS: float = 1.35
+const MAX_RADIUS: float = 3.4
+const PARTICLE_COLOR: Color = Color(0.92, 0.96, 1.0, 1.0)
 
 var _rng: RandomNumberGenerator = RandomNumberGenerator.new()
 var _particles: Array = [] # Array[Dictionary]
@@ -41,8 +42,8 @@ func _draw() -> void:
 		var x: float = float(p.get("x", 0.0))
 		var y: float = float(p.get("y", 0.0))
 		var r: float = float(p.get("r", 1.0))
-		var a: float = float(p.get("a", 0.14))
-		draw_circle(Vector2(x, y), r, Color(0.72, 0.84, 1.0, a))
+		var a: float = float(p.get("a", 0.35))
+		draw_circle(Vector2(x, y), r, Color(PARTICLE_COLOR.r, PARTICLE_COLOR.g, PARTICLE_COLOR.b, a))
 
 func _reseed_particles() -> void:
 	_particles = []
@@ -55,5 +56,5 @@ func _reseed_particles() -> void:
 			"vx": cos(ang) * speed * 0.5,
 			"vy": sin(ang) * speed,
 			"r": _rng.randf_range(MIN_RADIUS, MAX_RADIUS),
-			"a": _rng.randf_range(0.05, 0.18),
+			"a": _rng.randf_range(0.28, 0.52),
 		})

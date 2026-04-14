@@ -25,3 +25,4 @@ res://scripts/rendering/PlayAreaBackgroundView.gd
 res://scripts/rendering/FloatingParticlesView.gd
 res://scripts/rendering/ScorePopupsView.gd
 res://scripts/data/Constants.gd
+res://shaders/screen_bg_noise.gdshader
