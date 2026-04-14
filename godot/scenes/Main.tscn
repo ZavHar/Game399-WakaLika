@@ -90,10 +90,13 @@ ratio = 0.7777778
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
+stretch = true
 
 [node name="SubViewport" type="SubViewport" parent="MarginPlayfield/AspectBoard/SubViewportContainer" unique_id=29321553]
 handle_input_locally = false
-size = Vector2i(504, 648)
+size = Vector2i(827, 1064)
+size_2d_override = Vector2i(504, 648)
+size_2d_override_stretch = true
 render_target_update_mode = 4
 
 [node name="GameRoot" parent="MarginPlayfield/AspectBoard/SubViewportContainer/SubViewport" unique_id=1191664226 instance=ExtResource("2_gr")]
