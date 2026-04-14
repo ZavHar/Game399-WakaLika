@@ -8,7 +8,7 @@ const DIR_UP: int = 0
 const DIR_DOWN: int = 1
 const DIR_LEFT: int = 2
 const DIR_RIGHT: int = 3
-const CHOMP_FPS: float = 3.0
+const CHOMP_FPS: float = 10.0
 
 var _model: RefCounted = null
 var _trail: Array = [] # Array[Dictionary]
@@ -17,6 +17,7 @@ var _pac_closed_tex: Texture2D = null
 var _anim_time_s: float = 0.0
 var _last_pac_pos: Vector2 = Vector2(-9999.0, -9999.0)
 var _is_moving: bool = false
+var _movement_cooldown_s: float = 0.0
 
 func set_model(m: RefCounted) -> void:
 	_model = m
@@ -32,7 +33,12 @@ func _process(delta: float) -> void:
 		var p_now: Vector2 = _model.get("pac_pos") as Vector2
 		if _last_pac_pos.x < -9000.0:
 			_last_pac_pos = p_now
-		_is_moving = _last_pac_pos.distance_squared_to(p_now) > 0.0009
+		var moved: bool = _last_pac_pos.distance_squared_to(p_now) > 0.0009
+		if moved:
+			_movement_cooldown_s = 0.12
+		else:
+			_movement_cooldown_s = maxf(0.0, _movement_cooldown_s - delta)
+		_is_moving = moved or _movement_cooldown_s > 0.0
 		_last_pac_pos = p_now
 		_decay_trail(delta)
 		_push_trail_sample()

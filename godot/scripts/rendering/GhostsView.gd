@@ -8,6 +8,7 @@ const GHOST_TRAIL_MIN_SAMPLE_DIST_SQ: float = 0.24
 var _model: RefCounted = null
 var _trail_by_id: Dictionary = {}
 var _ghost_tex: Texture2D = null
+var _ghost_eyes_tex: Texture2D = null
 
 func set_model(m: RefCounted) -> void:
 	_model = m
@@ -15,6 +16,7 @@ func set_model(m: RefCounted) -> void:
 
 func _ready() -> void:
 	_ghost_tex = _load_svg_texture("res://assets/characters/ghost-base.svg", 128)
+	_ghost_eyes_tex = _load_svg_texture("res://assets/characters/ghost-eyes.svg", 128)
 
 func _process(delta: float) -> void:
 	_decay_ghost_trails(delta)
@@ -38,7 +40,8 @@ func _draw() -> void:
 		var id_t: String = g_trail.get("id") as String
 		var phase_t: String = str(g_trail.get("incapacitated_phase"))
 		var col_t: Color = _visual_color_for_ghost(id_t, g_trail)
-		_push_ghost_trail(id_t, Vector2(gv_t.x, gv_t.y), col_t, phase_t)
+		var incap_t: bool = bool(g_trail.get("is_incapacitated"))
+		_push_ghost_trail(id_t, Vector2(gv_t.x, gv_t.y), col_t, phase_t, incap_t)
 		_draw_ghost_trail(id_t)
 
 	# Pass 2: draw ghost bodies/effects on top of trails.
@@ -61,13 +64,14 @@ func _draw() -> void:
 			var cx: float = p.x * CELL_PX
 			var cy: float = p.y * CELL_PX
 			var center: Vector2 = Vector2(cx, cy)
-			if _ghost_tex != null:
-				var sz: float = CELL_PX * 0.95
-				draw_texture_rect(_ghost_tex, Rect2(cx - sz * 0.5, cy - sz * 0.5, sz, sz), false, base)
+			var incap: bool = bool(g.get("is_incapacitated"))
+			var draw_tex: Texture2D = _ghost_eyes_tex if incap else _ghost_tex
+			var draw_col: Color = Color(1, 1, 1, 1) if incap else base
+			if draw_tex != null:
+				var sz: float = CELL_PX * (0.62 if incap else 0.95)
+				draw_texture_rect(draw_tex, Rect2(cx - sz * 0.5, cy - sz * 0.5, sz, sz), false, draw_col)
 			else:
 				draw_circle(center, CELL_PX * 0.30, base)
-			if bool(g.get("is_incapacitated")):
-				_draw_incap_ghost_fx(center, phase)
 
 func _color_for_id(id: String) -> Color:
 	if id == "red":
@@ -110,7 +114,7 @@ func _ghost_render_positions(p: Vector2, w: int, h: int) -> Array:
 		out.append(Vector2(p.x, p.y - float(h)))
 	return out
 
-func _push_ghost_trail(id: String, p: Vector2, col: Color, phase: String) -> void:
+func _push_ghost_trail(id: String, p: Vector2, col: Color, phase: String, incap: bool) -> void:
 	var arr: Array = _trail_by_id.get(id, []) as Array
 	if not arr.is_empty():
 		var last: Dictionary = arr[arr.size() - 1] as Dictionary
@@ -118,7 +122,7 @@ func _push_ghost_trail(id: String, p: Vector2, col: Color, phase: String) -> voi
 		if lp.distance_squared_to(p) < GHOST_TRAIL_MIN_SAMPLE_DIST_SQ:
 			_trail_by_id[id] = arr
 			return
-	arr.append({"p": p, "life_s": GHOST_TRAIL_LIFE_S, "col": col, "phase": phase})
+	arr.append({"p": p, "life_s": GHOST_TRAIL_LIFE_S, "col": col, "phase": phase, "incap": incap})
 	if arr.size() > GHOST_TRAIL_MAX_SAMPLES:
 		arr.remove_at(0)
 	_trail_by_id[id] = arr
@@ -148,6 +152,7 @@ func _draw_ghost_trail(id: String) -> void:
 		var p: Vector2 = t.get("p", Vector2.ZERO) as Vector2
 		var col_snap: Color = t.get("col", Color(0.95, 0.96, 1.0, 1.0)) as Color
 		var phase_snap: String = str(t.get("phase", ""))
+		var incap_snap: bool = bool(t.get("incap", false))
 		var life_k: float = clampf(float(t.get("life_s", 0.0)) / GHOST_TRAIL_LIFE_S, 0.0, 1.0)
 		var k: float = maxf(life_k, float(i + 1) / float(n) * 0.6)
 		# Fade to true zero near end; avoid a visible "last frame pop" on removal.
@@ -157,21 +162,13 @@ func _draw_ghost_trail(id: String) -> void:
 			var rp: Vector2 = rp_v as Vector2
 			var cx: float = rp.x * CELL_PX
 			var cy: float = rp.y * CELL_PX
-			if _ghost_tex != null:
-				var sz: float = CELL_PX * (0.55 + 0.43 * k)
-				draw_texture_rect(_ghost_tex, Rect2(cx - sz * 0.5, cy - sz * 0.5, sz, sz), false, col)
+			var trail_tex: Texture2D = _ghost_eyes_tex if incap_snap else _ghost_tex
+			if trail_tex != null:
+				var sz: float = CELL_PX * ((0.40 + 0.22 * k) if incap_snap else (0.55 + 0.43 * k))
+				var trail_col: Color = Color(1, 1, 1, alpha) if incap_snap else col
+				draw_texture_rect(trail_tex, Rect2(cx - sz * 0.5, cy - sz * 0.5, sz, sz), false, trail_col)
 			else:
 				draw_circle(Vector2(cx, cy), CELL_PX * (0.12 + 0.1 * k), col)
-
-func _draw_incap_ghost_fx(center: Vector2, phase: String) -> void:
-	var pulse: float = 0.5
-	if _model != null:
-		var t: float = float(_model.get("time_remaining_s"))
-		pulse = 0.5 + 0.5 * sin(t * TAU * 1.7)
-	var ring_a: float = 0.22 + 0.18 * pulse
-	if phase == "waiting_in_house":
-		ring_a *= 0.8
-	draw_arc(center, CELL_PX * 0.37, 0.0, TAU, 22, Color(0.95, 0.97, 1.0, ring_a), 1.5, true)
 
 func _load_svg_texture(res_path: String, raster_px: int) -> Texture2D:
 	if not FileAccess.file_exists(res_path):
