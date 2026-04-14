@@ -831,7 +831,6 @@ func _collect_pellets() -> void:
 		score += PELLET_SCORE
 		if is_power:
 			fear_ms = FEAR_DURATION_MS
-			ghost_eat_chain = 0
 			_reverse_all_ghost_dirs()
 			sfx_power_pellet = true
 			_add_hitstop(45.0)
