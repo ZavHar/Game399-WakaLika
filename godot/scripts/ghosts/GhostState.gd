@@ -17,3 +17,5 @@ var is_incapacitated: bool = false
 var incapacitated_phase: String = ""
 var incapacitated_roams_left: int = 0
 var incapacitated_wait_ms: float = 0.0
+var is_released: bool = true
+var release_delay_ms: float = 0.0

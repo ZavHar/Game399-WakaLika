@@ -53,6 +53,10 @@ func set_model(m: RefCounted) -> void:
 	_model = m
 	queue_redraw()
 
+func _process(_delta: float) -> void:
+	if _model != null:
+		queue_redraw()
+
 func _ready() -> void:
 	_wall_tex = _load_png_texture("res://assets/tiles/maze-wall-atlas.png")
 	_wall_img = _load_png_image("res://assets/tiles/maze-wall-atlas.png")

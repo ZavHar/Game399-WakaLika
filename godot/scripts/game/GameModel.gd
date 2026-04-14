@@ -27,7 +27,7 @@ const PAC_GHOST_COLLISION_RADIUS_TILES: float = 0.5
 const FRUIT_SCORE: int = 200
 const FRUIT_SIDE_FLASH_DURATION_MS: float = 250.0
 const LEFT_FRUIT_SPAWN_LOCAL: Vector2i = Vector2i(9, 17)
-const FRUIT_HUE_SHIFT_STEP: float = 0.8
+const FRUIT_HUE_SHIFT_STEP: float = 0.05
 const FRUIT_HUE_SHIFT_LERP_PER_SEC: float = 0.5
 const VACUUM_RADIUS_TILES: float = 3.25
 const GHOST_EATEN_COMBO_BASE: int = 200
@@ -37,6 +37,7 @@ const FRUIT_SWEEP_DURATION_MS: float = 380.0
 const INCAP_PHASE_ROAM: String = "roam"
 const INCAP_PHASE_RETURN: String = "return_to_house"
 const INCAP_PHASE_WAITING: String = "waiting_in_house"
+const GHOST_RELEASE_SPACING_MS: float = 3000.0
 
 # Rendering parity state (mirrors web GameState fields; not all gameplay is ported yet).
 var fear_ms: float = 0.0
@@ -158,6 +159,7 @@ func step(dt: float) -> void:
 			ghost_eat_chain = 0
 
 	_decrement_incap_wait_ms(dt)
+	_tick_ghost_release_timers(dt)
 	_decrement_fruit_flash_ms(dt)
 	_update_hue_shift(dt)
 	_tick_juice_popups(dt)
@@ -241,6 +243,7 @@ func _init_ghosts() -> void:
 	ghosts.append(_make_ghost("pink", spawns[1] as Vector2i, DIR_RIGHT))
 	ghosts.append(_make_ghost("blue", spawns[2] as Vector2i, DIR_LEFT))
 	ghosts.append(_make_ghost("orange", spawns[3] as Vector2i, DIR_RIGHT))
+	_init_ghost_release_schedule()
 
 func _make_ghost(id: String, pos: Vector2i, dir: int) -> RefCounted:
 	var script: Script = load("res://scripts/ghosts/GhostState.gd") as Script
@@ -258,7 +261,25 @@ func _make_ghost(id: String, pos: Vector2i, dir: int) -> RefCounted:
 	g.set("incapacitated_phase", "")
 	g.set("incapacitated_roams_left", 0)
 	g.set("incapacitated_wait_ms", 0.0)
+	g.set("is_released", true)
+	g.set("release_delay_ms", 0.0)
 	return g
+
+func _init_ghost_release_schedule() -> void:
+	# Start-of-game staggered exits: red, pink, orange, blue (3s spacing).
+	var order_index: Dictionary = {
+		"red": 0,
+		"pink": 1,
+		"orange": 2,
+		"blue": 3,
+	}
+	for g_v: Variant in ghosts:
+		var g: RefCounted = g_v as RefCounted
+		var id: String = str(g.get("id"))
+		var idx: int = int(order_index.get(id, 0))
+		var delay_ms: float = float(idx) * GHOST_RELEASE_SPACING_MS
+		g.set("release_delay_ms", delay_ms)
+		g.set("is_released", idx == 0)
 
 func _decrement_incap_wait_ms(dt: float) -> void:
 	var dms: float = dt * 1000.0
@@ -270,6 +291,23 @@ func _decrement_incap_wait_ms(dt: float) -> void:
 			continue
 		var w: float = float(g.get("incapacitated_wait_ms"))
 		g.set("incapacitated_wait_ms", maxf(0.0, w - dms))
+
+func _tick_ghost_release_timers(dt: float) -> void:
+	var dms: float = dt * 1000.0
+	for g_v: Variant in ghosts:
+		var g: RefCounted = g_v as RefCounted
+		if g.get("is_released"):
+			continue
+		var delay_v: Variant = g.get("release_delay_ms")
+		var left_ms_prev: float = 0.0
+		if typeof(delay_v) == TYPE_FLOAT:
+			left_ms_prev = delay_v as float
+		elif typeof(delay_v) == TYPE_INT:
+			left_ms_prev = 0.0 + (delay_v as int)
+		var left_ms: float = maxf(0.0, left_ms_prev - dms)
+		g.set("release_delay_ms", left_ms)
+		if left_ms <= 0.0:
+			g.set("is_released", true)
 
 func _decrement_fruit_flash_ms(dt: float) -> void:
 	var dms: float = dt * 1000.0
@@ -371,6 +409,8 @@ func _update_ghost_destinations() -> void:
 
 	for g_v: Variant in ghosts:
 		var g: RefCounted = g_v as RefCounted
+		if not g.get("is_released"):
+			continue
 		var id: String = g.get("id") as String
 		var gpos: Vector2i = g.get("pos") as Vector2i
 		var gdir: int = int(g.get("dir"))
@@ -472,6 +512,20 @@ func _manhattan(a: Vector2i, b: Vector2i) -> int:
 func _step_ghosts(dt: float) -> void:
 	for g_v: Variant in ghosts:
 		var g: RefCounted = g_v as RefCounted
+		if not g.get("is_released"):
+			var acc_unreleased: float = float(g.get("step_acc"))
+			acc_unreleased += float(g.get("speed_tiles_per_sec")) * dt
+			var usteps: int = 0
+			while acc_unreleased >= 1.0 and usteps < MAX_GHOST_TILE_STEPS_PER_FRAME:
+				var moved_u: bool = _try_move_ghost_house_wander(g)
+				if not moved_u:
+					acc_unreleased = min(acc_unreleased, 1.0)
+					break
+				acc_unreleased -= 1.0
+				usteps += 1
+			g.set("step_acc", acc_unreleased)
+			g.set("anim_t", clamp(acc_unreleased, 0.0, 1.0))
+			continue
 		var acc: float = float(g.get("step_acc"))
 		var speed: float = float(g.get("speed_tiles_per_sec"))
 		if bool(g.get("is_incapacitated")):
@@ -489,6 +543,47 @@ func _step_ghosts(dt: float) -> void:
 
 		g.set("step_acc", acc)
 		g.set("anim_t", clamp(acc, 0.0, 1.0))
+
+func _try_move_ghost_house_wander(g: RefCounted) -> bool:
+	var pos: Vector2i = g.get("pos") as Vector2i
+	var facing: int = int(g.get("dir"))
+	var rev: int = _reverse_dir(facing)
+
+	var candidates: Array[int] = []
+	for ndir: int in [DIR_UP, DIR_DOWN, DIR_LEFT, DIR_RIGHT]:
+		if ndir == rev:
+			continue
+		var v: Vector2 = _dir_to_vec(ndir)
+		var nx: int = pos.x + int(v.x)
+		var ny: int = pos.y + int(v.y)
+		if not board.is_ghost_step_blocked_opts(pos.x, pos.y, nx, ny, false, true):
+			candidates.append(ndir)
+
+	if candidates.is_empty():
+		var rv: Vector2 = _dir_to_vec(rev)
+		var rx: int = pos.x + int(rv.x)
+		var ry: int = pos.y + int(rv.y)
+		if board.is_ghost_step_blocked_opts(pos.x, pos.y, rx, ry, false, true):
+			return false
+		var next_r: Vector2i = _wrap_tile(Vector2i(rx, ry))
+		g.set("dir", rev)
+		g.set("anim_from", pos)
+		g.set("anim_to", next_r)
+		g.set("pos", next_r)
+		return true
+
+	var chosen: int = candidates[_rng.randi_range(0, candidates.size() - 1)]
+	var v2: Vector2 = _dir_to_vec(chosen)
+	var nx2: int = pos.x + int(v2.x)
+	var ny2: int = pos.y + int(v2.y)
+	if board.is_ghost_step_blocked_opts(pos.x, pos.y, nx2, ny2, false, true):
+		return false
+	var next_cell: Vector2i = _wrap_tile(Vector2i(nx2, ny2))
+	g.set("dir", chosen)
+	g.set("anim_from", pos)
+	g.set("anim_to", next_cell)
+	g.set("pos", next_cell)
+	return true
 
 func _try_move_ghost_one_tile(g: RefCounted) -> bool:
 	# Web: `isFeared = !isIncapacitated && fearMs > 0` — incapped ghosts use BFS, not fear wander.
