@@ -58,13 +58,21 @@ func is_pac_blocked(global_x: int, y: int) -> bool:
 	return t == Tile.Id.WALL or t == Tile.Id.EXIT or t == Tile.Id.GHOST_HOUSE
 
 func is_ghost_step_blocked(from_x: int, from_y: int, to_x: int, to_y: int) -> bool:
-	return is_ghost_step_blocked_opts(from_x, from_y, to_x, to_y, false, false)
+	return is_ghost_step_blocked_opts(from_x, from_y, to_x, to_y, false, false, false)
 
 ## Matches web `isGhostStepBlocked` opts: exit door when returning home; house-only shuffling when waiting.
-func is_ghost_step_blocked_opts(from_x: int, from_y: int, to_x: int, to_y: int, allow_exit_door: bool, restrict_to_ghost_house: bool) -> bool:
+## When `ignore_walls` is true, ghosts may phase through WALL tiles (unstick recovery only).
+func is_ghost_step_blocked_opts(from_x: int, from_y: int, to_x: int, to_y: int, allow_exit_door: bool, restrict_to_ghost_house: bool, ignore_walls: bool = false) -> bool:
 	var to_t: int = tile_at(to_x, to_y)
 	if restrict_to_ghost_house:
 		return to_t != Tile.Id.GHOST_HOUSE
+	if ignore_walls:
+		if to_t == Tile.Id.EXIT:
+			if allow_exit_door:
+				return false
+			var from_t2: int = tile_at(from_x, from_y)
+			return from_t2 != Tile.Id.EXIT and from_t2 != Tile.Id.GHOST_HOUSE
+		return false
 	if to_t == Tile.Id.WALL:
 		return true
 	if to_t != Tile.Id.EXIT:

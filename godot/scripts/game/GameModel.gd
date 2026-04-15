@@ -26,6 +26,8 @@ const MAX_GHOST_TILE_STEPS_PER_FRAME: int = 8
 const ORANGE_SCATTER_DISTANCE: int = 8
 
 const FEAR_DURATION_MS: float = 10000.0
+## Tile speed multiplier while power-pellet fear is active (non-incapacitated ghosts only).
+const GHOST_FEAR_SPEED_MULT: float = 0.6
 const GHOST_EATEN_SCORE: int = 200
 const PAC_GHOST_COLLISION_RADIUS_TILES: float = 0.5
 const FRUIT_SCORE: int = 200
@@ -41,6 +43,8 @@ const FRUIT_SWEEP_DURATION_MS: float = 380.0
 const INCAP_PHASE_ROAM: String = "roam"
 const INCAP_PHASE_RETURN: String = "return_to_house"
 const INCAP_PHASE_WAITING: String = "waiting_in_house"
+## After board swap etc.: ghost inside a wall tile paths to nearest non-wall, phasing through walls.
+const INCAP_PHASE_UNSTICK: String = "unstick_wall"
 const GHOST_RELEASE_SPACING_MS: float = 3000.0
 
 # Rendering parity state (mirrors web GameState fields; not all gameplay is ported yet).
@@ -181,6 +185,7 @@ func step(dt: float) -> void:
 	_tick_juice_popups(dt)
 
 	_apply_time_ramp_speeds()
+	_repair_ghosts_if_inside_wall()
 
 	# Pac movement with substeps (matches TS structure)
 	var sub_dt: float = dt / float(PAC_SUBSTEPS_PER_FRAME)
@@ -363,6 +368,28 @@ func _reverse_all_ghost_dirs() -> void:
 	for g_v: Variant in ghosts:
 		var g: RefCounted = g_v as RefCounted
 		g.set("dir", _reverse_dir(int(g.get("dir"))))
+		# Match glide to reversed `dir`: swap segment ends and mirror progress. Must update
+		# `step_acc` too — `_step_ghosts` overwrites `anim_t` from `step_acc` every frame.
+		# Torus tunnel wraps are not symmetric under swap (|dx|+|dy| != 1); snap to `pos` then.
+		var af: Vector2i = g.get("anim_from") as Vector2i
+		var at: Vector2i = g.get("anim_to") as Vector2i
+		if _vec2i_eq(af, at):
+			continue
+		var acc: float = clampf(float(g.get("step_acc")), 0.0, 1.0)
+		var manhattan: int = abs(at.x - af.x) + abs(at.y - af.y)
+		if manhattan == 1:
+			g.set("anim_from", at)
+			g.set("anim_to", af)
+			# Moves always keep `pos == anim_to` (committed tile = glide target). Swapping ends
+			# without updating `pos` left stale `pos`; next move used wrong `anim_from` + `step_acc`.
+			g.set("pos", af)
+			g.set("step_acc", clampf(1.0 - acc, 0.0, 1.0))
+		else:
+			var p: Vector2i = _wrap_tile(g.get("pos") as Vector2i)
+			g.set("anim_from", p)
+			g.set("anim_to", p)
+			g.set("pos", p)
+			g.set("step_acc", 1.0)
 
 func _reverse_dir(dir: int) -> int:
 	if dir == DIR_UP:
@@ -394,6 +421,11 @@ func _update_incap_ghost_dest(g: RefCounted, gpos: Vector2i, gdir: int) -> bool:
 	if not bool(g.get("is_incapacitated")):
 		return false
 	var phase_str: String = str(g.get("incapacitated_phase"))
+	if phase_str == INCAP_PHASE_UNSTICK:
+		var dest_u: Vector2i = g.get("dest") as Vector2i
+		if board.is_wall(dest_u.x, dest_u.y):
+			g.set("dest", _nearest_non_wall_tile_bfs(gpos))
+		return true
 	var roams_left: int = int(g.get("incapacitated_roams_left"))
 	var wait_ms: float = float(g.get("incapacitated_wait_ms"))
 	var on_gh: bool = board.is_ghost_house(gpos.x, gpos.y)
@@ -552,7 +584,10 @@ func _step_ghosts(dt: float) -> void:
 		var g: RefCounted = g_v as RefCounted
 		if not g.get("is_released"):
 			var acc_unreleased: float = float(g.get("step_acc"))
-			acc_unreleased += float(g.get("speed_tiles_per_sec")) * dt
+			var speed_u: float = float(g.get("speed_tiles_per_sec"))
+			if fear_ms > 0.0:
+				speed_u *= GHOST_FEAR_SPEED_MULT
+			acc_unreleased += speed_u * dt
 			var usteps: int = 0
 			while acc_unreleased >= 1.0 and usteps < MAX_GHOST_TILE_STEPS_PER_FRAME:
 				var moved_u: bool = _try_move_ghost_house_wander(g)
@@ -568,6 +603,8 @@ func _step_ghosts(dt: float) -> void:
 		var speed: float = float(g.get("speed_tiles_per_sec"))
 		if bool(g.get("is_incapacitated")):
 			speed *= 2.0
+		elif fear_ms > 0.0:
+			speed *= GHOST_FEAR_SPEED_MULT
 		acc += speed * dt
 
 		var steps: int = 0
@@ -626,6 +663,8 @@ func _try_move_ghost_house_wander(g: RefCounted) -> bool:
 func _try_move_ghost_one_tile(g: RefCounted) -> bool:
 	# Web: `isFeared = !isIncapacitated && fearMs > 0` — incapped ghosts use BFS, not fear wander.
 	if bool(g.get("is_incapacitated")):
+		if str(g.get("incapacitated_phase")) == INCAP_PHASE_UNSTICK:
+			return _try_move_ghost_unstick(g)
 		return _try_move_ghost_incap(g)
 	if fear_ms > 0.0:
 		return _try_move_ghost_fear(g)
@@ -682,6 +721,102 @@ func _try_move_ghost_incap(g: RefCounted) -> bool:
 	g.set("anim_from", pos)
 	g.set("anim_to", next_cell)
 	g.set("pos", next_cell)
+	return true
+
+func _repair_ghosts_if_inside_wall() -> void:
+	for g_v: Variant in ghosts:
+		var g: RefCounted = g_v as RefCounted
+		var pos: Vector2i = _wrap_tile(g.get("pos") as Vector2i)
+		g.set("pos", pos)
+		if board.tile_at(pos.x, pos.y) != Tile.Id.WALL:
+			continue
+		_begin_ghost_unstick_from_wall(g)
+
+func _nearest_non_wall_tile_bfs(start: Vector2i) -> Vector2i:
+	var s: Vector2i = _wrap_tile(start)
+	if board.tile_at(s.x, s.y) != Tile.Id.WALL:
+		return s
+	var q: Array = [s]
+	var qi: int = 0
+	var visited: Dictionary = {}
+	visited[_cell_key(s)] = true
+	var dirs: Array[Vector2i] = [Vector2i(0, -1), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(1, 0)]
+	while qi < q.size():
+		var cur: Vector2i = q[qi] as Vector2i
+		qi += 1
+		for d: Vector2i in dirs:
+			var n: Vector2i = _wrap_tile(Vector2i(cur.x + d.x, cur.y + d.y))
+			var k: int = _cell_key(n)
+			if visited.has(k):
+				continue
+			visited[k] = true
+			if board.tile_at(n.x, n.y) != Tile.Id.WALL:
+				return n
+			q.append(n)
+	return s
+
+func _begin_ghost_unstick_from_wall(g: RefCounted) -> void:
+	var pos: Vector2i = _wrap_tile(g.get("pos") as Vector2i)
+	g.set("pos", pos)
+	if board.tile_at(pos.x, pos.y) != Tile.Id.WALL:
+		return
+	if str(g.get("incapacitated_phase")) == INCAP_PHASE_UNSTICK:
+		return
+	var prev_incap_v: Variant = g.get("is_incapacitated")
+	g.set("unstick_saved_incap", prev_incap_v == true)
+	g.set("unstick_saved_phase", str(g.get("incapacitated_phase")))
+	g.set("unstick_saved_roams", int(g.get("incapacitated_roams_left")))
+	g.set("unstick_saved_wait_ms", float(g.get("incapacitated_wait_ms")))
+	g.set("is_incapacitated", true)
+	g.set("incapacitated_phase", INCAP_PHASE_UNSTICK)
+	var goal: Vector2i = _nearest_non_wall_tile_bfs(pos)
+	g.set("dest", goal)
+
+func _finish_ghost_unstick(g: RefCounted) -> void:
+	var saved_incap_v: Variant = g.get("unstick_saved_incap")
+	var saved_incap: bool = saved_incap_v == true
+	if saved_incap:
+		var ph: String = str(g.get("unstick_saved_phase"))
+		if ph == "" or ph == INCAP_PHASE_UNSTICK:
+			ph = INCAP_PHASE_ROAM
+		g.set("is_incapacitated", true)
+		g.set("incapacitated_phase", ph)
+		g.set("incapacitated_roams_left", int(g.get("unstick_saved_roams")))
+		g.set("incapacitated_wait_ms", float(g.get("unstick_saved_wait_ms")))
+	else:
+		g.set("is_incapacitated", false)
+		g.set("incapacitated_phase", "")
+		g.set("incapacitated_roams_left", 0)
+		g.set("incapacitated_wait_ms", 0.0)
+	var pos: Vector2i = _wrap_tile(g.get("pos") as Vector2i)
+	g.set("anim_from", pos)
+	g.set("anim_to", pos)
+	g.set("anim_t", 1.0)
+
+func _try_move_ghost_unstick(g: RefCounted) -> bool:
+	var pos: Vector2i = _wrap_tile(g.get("pos") as Vector2i)
+	if board.tile_at(pos.x, pos.y) != Tile.Id.WALL:
+		_finish_ghost_unstick(g)
+		return false
+	var dest: Vector2i = g.get("dest") as Vector2i
+	var facing: int = int(g.get("dir"))
+	var path: Array = find_path_bfs(pos, dest, facing, false, false, true) as Array
+	if path.size() < 2:
+		dest = _nearest_non_wall_tile_bfs(pos)
+		g.set("dest", dest)
+		path = find_path_bfs(pos, dest, facing, false, false, true) as Array
+		if path.size() < 2:
+			return false
+	var next_cell: Vector2i = path[1] as Vector2i
+	var chosen_dir: int = _direction_from_step(pos, next_cell)
+	if board.is_ghost_step_blocked_opts(pos.x, pos.y, next_cell.x, next_cell.y, false, false, true):
+		return false
+	g.set("dir", chosen_dir)
+	g.set("anim_from", pos)
+	g.set("anim_to", next_cell)
+	g.set("pos", next_cell)
+	if _vec2i_eq(next_cell, dest):
+		_finish_ghost_unstick(g)
 	return true
 
 ## Random, non-reverse-first movement while feared (matches web `tryMoveGhostOneTile` fear branch).
@@ -828,13 +963,13 @@ func _wrap_tile(p: Vector2i) -> Vector2i:
 		y += H
 	return Vector2i(x, y)
 
-func find_path_bfs(start: Vector2i, goal: Vector2i, facing: int, allow_exit_door: bool = false, restrict_to_ghost_house: bool = false) -> Array:
-	var no_reverse: Array = _find_path_bfs_core(start, goal, facing, true, allow_exit_door, restrict_to_ghost_house)
+func find_path_bfs(start: Vector2i, goal: Vector2i, facing: int, allow_exit_door: bool = false, restrict_to_ghost_house: bool = false, ignore_walls: bool = false) -> Array:
+	var no_reverse: Array = _find_path_bfs_core(start, goal, facing, true, allow_exit_door, restrict_to_ghost_house, ignore_walls)
 	if no_reverse.size() > 0:
 		return no_reverse
-	return _find_path_bfs_core(start, goal, facing, false, allow_exit_door, restrict_to_ghost_house)
+	return _find_path_bfs_core(start, goal, facing, false, allow_exit_door, restrict_to_ghost_house, ignore_walls)
 
-func _find_path_bfs_core(start: Vector2i, goal: Vector2i, facing: int, forbid_first_reverse: bool, allow_exit_door: bool, restrict_to_ghost_house: bool) -> Array:
+func _find_path_bfs_core(start: Vector2i, goal: Vector2i, facing: int, forbid_first_reverse: bool, allow_exit_door: bool, restrict_to_ghost_house: bool, ignore_walls: bool) -> Array:
 	start = _wrap_tile(start)
 	goal = _wrap_tile(goal)
 	if start == goal:
@@ -851,7 +986,7 @@ func _find_path_bfs_core(start: Vector2i, goal: Vector2i, facing: int, forbid_fi
 	var parent: Dictionary = {}
 	parent[_cell_key(start)] = null
 
-	var skip_back: bool = forbid_first_reverse and _count_walkable_neighbors_opts(start, allow_exit_door, restrict_to_ghost_house) > 1
+	var skip_back: bool = forbid_first_reverse and _count_walkable_neighbors_opts(start, allow_exit_door, restrict_to_ghost_house, ignore_walls) > 1
 
 	while qi < q.size():
 		var cur: Vector2i = q[qi] as Vector2i
@@ -862,7 +997,7 @@ func _find_path_bfs_core(start: Vector2i, goal: Vector2i, facing: int, forbid_fi
 		for d: Vector2i in [Vector2i(0, -1), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(1, 0)]:
 			var nx: int = cur.x + d.x
 			var ny: int = cur.y + d.y
-			if board.is_ghost_step_blocked_opts(cur.x, cur.y, nx, ny, allow_exit_door, restrict_to_ghost_house):
+			if board.is_ghost_step_blocked_opts(cur.x, cur.y, nx, ny, allow_exit_door, restrict_to_ghost_house, ignore_walls):
 				continue
 			if skip_back and cur == start and _is_back_neighbor(start, facing, nx, ny):
 				continue
@@ -897,10 +1032,10 @@ func _cell_key(p: Vector2i) -> int:
 		wy += H
 	return wy * FULL_W + wx
 
-func _count_walkable_neighbors_opts(p: Vector2i, allow_exit_door: bool, restrict_to_ghost_house: bool) -> int:
+func _count_walkable_neighbors_opts(p: Vector2i, allow_exit_door: bool, restrict_to_ghost_house: bool, ignore_walls: bool = false) -> int:
 	var n: int = 0
 	for d: Vector2i in [Vector2i(0, -1), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(1, 0)]:
-		if not board.is_ghost_step_blocked_opts(p.x, p.y, p.x + d.x, p.y + d.y, allow_exit_door, restrict_to_ghost_house):
+		if not board.is_ghost_step_blocked_opts(p.x, p.y, p.x + d.x, p.y + d.y, allow_exit_door, restrict_to_ghost_house, ignore_walls):
 			n += 1
 	return n
 
@@ -982,8 +1117,10 @@ func _collect_pellets() -> void:
 		row[tx] = false
 		score += PELLET_SCORE
 		if is_power:
+			var already_in_fear: bool = fear_ms > 0.0
 			fear_ms = FEAR_DURATION_MS
-			_reverse_all_ghost_dirs()
+			if not already_in_fear:
+				_reverse_all_ghost_dirs()
 			sfx_power_pellet = true
 			_add_hitstop(45.0)
 		else:
@@ -1010,8 +1147,10 @@ func _collect_pellets_vacuum() -> void:
 			row[x] = false
 			score += PELLET_SCORE
 			if is_power:
+				var already_in_fear: bool = fear_ms > 0.0
 				fear_ms = FEAR_DURATION_MS
-				_reverse_all_ghost_dirs()
+				if not already_in_fear:
+					_reverse_all_ghost_dirs()
 				sfx_power_pellet = true
 				_add_hitstop(45.0)
 			else:
@@ -1094,6 +1233,7 @@ func _apply_half_refresh(side: String, new_left_half: Array) -> void:
 	else:
 		pellets_left_left = count
 	board_revision += 1
+	_repair_ghosts_if_inside_wall()
 
 func _handle_fruit_collection() -> void:
 	_sync_fruit_actives()

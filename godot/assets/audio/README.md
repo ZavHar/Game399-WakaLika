@@ -6,8 +6,8 @@ Drop audio files in this folder using **base names** below. For each sound, use 
 - `fruit`
 - `ghost_eaten`
 - `game_over`
-- `ghost_alive` (per-ghost distance-attenuated loop while not feared)
-- `ghost_fear` (single **global** loop while power-pellet fear is active; per-ghost loops are silent then)
+- `ghost_alive` (single **global** loop while not feared; volume scales with living non-incap ghost count and proximity to Pac, silent at 0 living ghosts)
+- `ghost_fear` (single **global** loop while power-pellet fear is active; alive/incap ghost loops are silent then)
 - `ghost_incapacitated` (per-ghost distance-attenuated loop while eaten / eyes state, only when not in global fear)
 
 Power pellets use the same alternating pellet chomp sounds as normal pellets (no separate `power_pellet.mp3` in Godot).

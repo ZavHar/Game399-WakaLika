@@ -19,3 +19,9 @@ var incapacitated_roams_left: int = 0
 var incapacitated_wait_ms: float = 0.0
 var is_released: bool = true
 var release_delay_ms: float = 0.0
+
+## Wall-unstick recovery: snapshot before entering `INCAP_PHASE_UNSTICK`.
+var unstick_saved_incap: bool = false
+var unstick_saved_phase: String = ""
+var unstick_saved_roams: int = 0
+var unstick_saved_wait_ms: float = 0.0

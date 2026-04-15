@@ -13,6 +13,9 @@ const GHOST_FEAR_LOOP_BASE: String = "res://assets/audio/ghost_fear"
 const GHOST_INCAP_LOOP_BASE: String = "res://assets/audio/ghost_incapacitated"
 
 const GHOST_BASE_VOLUME_ALIVE: float = 0.18
+## Extra linear gain per additional living ghost on the global alive loop (after the first).
+const GHOST_ALIVE_PER_EXTRA_GHOST: float = 0.16
+const GHOST_ALIVE_GLOBAL_GAIN_CAP: float = 0.42
 ## Single full-mix loop while `GameModel.fear_ms` > 0 (per-ghost players are silent then).
 const GHOST_FEAR_GLOBAL_VOLUME_LINEAR: float = 0.24
 const GHOST_BASE_VOLUME_INCAP: float = 0.05
@@ -32,8 +35,11 @@ var _fruit_player: AudioStreamPlayer
 var _ghost_eaten_player: AudioStreamPlayer
 var _game_over_player: AudioStreamPlayer
 var _ghost_state_streams: Dictionary = {}
-var _ghost_loop_players: Array[AudioStreamPlayer] = []
-var _ghost_loop_gain_linear: Array[float] = []
+## Per-ghost slots used only for `incapacitated` loops (alive uses `_ghost_alive_global_player`).
+var _ghost_incap_loop_players: Array[AudioStreamPlayer] = []
+var _ghost_incap_loop_gain_linear: Array[float] = []
+var _ghost_alive_global_player: AudioStreamPlayer
+var _ghost_alive_global_gain_linear: float = 0.0
 var _fear_global_player: AudioStreamPlayer
 var _fear_global_gain_linear: float = 0.0
 var _rng: RandomNumberGenerator = RandomNumberGenerator.new()
@@ -50,6 +56,13 @@ func _ready() -> void:
 	_game_over_player = _make_player("GameOver", GAME_OVER_BASE, 0.5, false)
 	_ghost_state_streams["alive"] = _load_audio_stream_from_base(GHOST_ALIVE_LOOP_BASE, true)
 	_ghost_state_streams["incapacitated"] = _load_audio_stream_from_base(GHOST_INCAP_LOOP_BASE, true)
+	_ghost_alive_global_player = AudioStreamPlayer.new()
+	_ghost_alive_global_player.name = "GhostAliveGlobal"
+	_ghost_alive_global_player.bus = "Master"
+	_ghost_alive_global_player.volume_db = linear_to_db(0.0001)
+	_ghost_alive_global_player.stream = _ghost_state_streams["alive"] as AudioStream
+	add_child(_ghost_alive_global_player)
+	_ghost_alive_global_gain_linear = 0.0
 	_fear_global_player = AudioStreamPlayer.new()
 	_fear_global_player.name = "GhostFearGlobal"
 	_fear_global_player.bus = "Master"
@@ -57,7 +70,7 @@ func _ready() -> void:
 	_fear_global_player.stream = _load_audio_stream_from_base(GHOST_FEAR_LOOP_BASE, true)
 	add_child(_fear_global_player)
 	_fear_global_gain_linear = 0.0
-	_init_ghost_loop_players(4)
+	_init_ghost_incap_loop_players(4)
 	_rng.randomize()
 
 func _make_player(node_name: String, base_path_without_ext: String, volume_linear: float, looped: bool) -> AudioStreamPlayer:
@@ -145,50 +158,86 @@ func maybe_play_low_time_warning(_prev_sec: int, _next_sec: int) -> void:
 
 func update_ghost_ambience(model: RefCounted, dt: float) -> void:
 	if model == null:
-		_fade_out_all_ghost_loops(dt)
+		_fade_out_ghost_alive_global(dt)
+		_fade_out_ghost_incap_loops(dt)
 		_apply_fear_global_gain(dt, false)
 		return
 	if _read_variant_bool(model, "is_game_over", false):
-		_fade_out_all_ghost_loops(dt)
+		_fade_out_ghost_alive_global(dt)
+		_fade_out_ghost_incap_loops(dt)
 		_apply_fear_global_gain(dt, false)
 		return
 	var ghosts_v: Variant = model.get("ghosts")
 	if typeof(ghosts_v) != TYPE_ARRAY:
-		_fade_out_all_ghost_loops(dt)
+		_fade_out_ghost_alive_global(dt)
+		_fade_out_ghost_incap_loops(dt)
 		_apply_fear_global_gain(dt, false)
 		return
 	var ghosts: Array = ghosts_v as Array
 	var global_fear_ms: float = _read_variant_float(model, "fear_ms", 0.0)
 	if global_fear_ms > 0.0:
 		_apply_fear_global_gain(dt, true)
-		_fade_out_all_ghost_loops(dt)
+		_fade_out_ghost_alive_global(dt)
+		_fade_out_ghost_incap_loops(dt)
 		return
 
 	_apply_fear_global_gain(dt, false)
 	var pac_pos: Vector2 = _variant_to_vec2(model.get("pac_pos"), Vector2.ZERO)
-	var count: int = min(ghosts.size(), _ghost_loop_players.size())
+	var count: int = min(ghosts.size(), _ghost_incap_loop_players.size())
+
+	var alive_count: int = 0
+	var k_best_alive: float = 0.0
+	for ig: int in range(ghosts.size()):
+		var g_alive: Variant = ghosts[ig]
+		if _read_variant_bool(g_alive, "is_incapacitated", false):
+			continue
+		alive_count += 1
+		var gpos_a: Vector2 = _read_variant_vec2(g_alive, "pos", Vector2.ZERO)
+		var d_a: float = gpos_a.distance_to(pac_pos)
+		var k_a: float = 1.0 - clampf(d_a / GHOST_HEAR_RADIUS_TILES, 0.0, 1.0)
+		k_a = pow(k_a, GHOST_DISTANCE_ATTENUATION_EXP)
+		k_best_alive = maxf(k_best_alive, k_a)
+
+	var target_alive_gain: float = 0.0
+	if alive_count > 0:
+		var count_mul: float = 1.0 + GHOST_ALIVE_PER_EXTRA_GHOST * float(alive_count - 1)
+		target_alive_gain = minf(
+			GHOST_ALIVE_GLOBAL_GAIN_CAP,
+			GHOST_BASE_VOLUME_ALIVE * k_best_alive * count_mul
+		)
+	_apply_ghost_alive_global_gain(dt, target_alive_gain)
+
+	var incap_stream: AudioStream = _ghost_state_streams.get("incapacitated") as AudioStream
 	for i: int in range(count):
 		var g_v: Variant = ghosts[i]
-		var player: AudioStreamPlayer = _ghost_loop_players[i]
-		var state_key: String = _ghost_state_key_for_ghost(g_v)
-		var state_stream: AudioStream = _ghost_state_streams.get(state_key) as AudioStream
-		if player.stream != state_stream:
+		var player: AudioStreamPlayer = _ghost_incap_loop_players[i]
+		if not _read_variant_bool(g_v, "is_incapacitated", false):
+			var fade_g: float = lerpf(_ghost_incap_loop_gain_linear[i], 0.0, clampf(dt * GHOST_VOLUME_SMOOTH_PER_SEC, 0.0, 1.0))
+			_ghost_incap_loop_gain_linear[i] = fade_g
+			if fade_g <= 0.001:
+				player.stop()
+				_ghost_incap_loop_gain_linear[i] = 0.0
+			else:
+				player.volume_db = linear_to_db(maxf(0.0001, fade_g))
+			continue
+
+		if player.stream != incap_stream:
 			player.stop()
-			player.stream = state_stream
+			player.stream = incap_stream
 		if player.stream == null:
 			player.stop()
-			_ghost_loop_gain_linear[i] = 0.0
+			_ghost_incap_loop_gain_linear[i] = 0.0
 			continue
 
 		var gpos: Vector2 = _read_variant_vec2(g_v, "pos", Vector2.ZERO)
 		var d: float = gpos.distance_to(pac_pos)
 		var k: float = 1.0 - clampf(d / GHOST_HEAR_RADIUS_TILES, 0.0, 1.0)
 		k = pow(k, GHOST_DISTANCE_ATTENUATION_EXP)
-		var target_gain: float = _ghost_base_volume_for_state(state_key) * k
-		var cur_gain: float = _ghost_loop_gain_linear[i]
+		var target_gain: float = GHOST_BASE_VOLUME_INCAP * k
+		var cur_gain: float = _ghost_incap_loop_gain_linear[i]
 		var t: float = clampf(dt * GHOST_VOLUME_SMOOTH_PER_SEC, 0.0, 1.0)
 		cur_gain = lerpf(cur_gain, target_gain, t)
-		_ghost_loop_gain_linear[i] = cur_gain
+		_ghost_incap_loop_gain_linear[i] = cur_gain
 		if cur_gain <= 0.001:
 			player.stop()
 			continue
@@ -196,37 +245,37 @@ func update_ghost_ambience(model: RefCounted, dt: float) -> void:
 		if not player.playing:
 			player.play()
 
-	for j: int in range(count, _ghost_loop_players.size()):
-		var pj: AudioStreamPlayer = _ghost_loop_players[j]
-		_ghost_loop_gain_linear[j] = lerpf(_ghost_loop_gain_linear[j], 0.0, clampf(dt * GHOST_VOLUME_SMOOTH_PER_SEC, 0.0, 1.0))
-		if _ghost_loop_gain_linear[j] <= 0.001:
-			pj.stop()
-			continue
-		pj.volume_db = linear_to_db(maxf(0.0001, _ghost_loop_gain_linear[j]))
-		if not pj.playing:
-			pj.play()
+	for j: int in range(count, _ghost_incap_loop_players.size()):
+		var pj: AudioStreamPlayer = _ghost_incap_loop_players[j]
+		pj.stop()
+		_ghost_incap_loop_gain_linear[j] = 0.0
 
-func _init_ghost_loop_players(count: int) -> void:
-	_ghost_loop_players.clear()
-	_ghost_loop_gain_linear.clear()
+func _apply_ghost_alive_global_gain(dt: float, target_linear: float) -> void:
+	if _ghost_alive_global_player == null or _ghost_alive_global_player.stream == null:
+		return
+	var t: float = clampf(dt * GHOST_VOLUME_SMOOTH_PER_SEC, 0.0, 1.0)
+	_ghost_alive_global_gain_linear = lerpf(_ghost_alive_global_gain_linear, target_linear, t)
+	if _ghost_alive_global_gain_linear <= 0.001:
+		_ghost_alive_global_player.stop()
+		return
+	_ghost_alive_global_player.volume_db = linear_to_db(maxf(0.0001, _ghost_alive_global_gain_linear))
+	if not _ghost_alive_global_player.playing:
+		_ghost_alive_global_player.play()
+
+func _fade_out_ghost_alive_global(dt: float) -> void:
+	_apply_ghost_alive_global_gain(dt, 0.0)
+
+func _init_ghost_incap_loop_players(count: int) -> void:
+	_ghost_incap_loop_players.clear()
+	_ghost_incap_loop_gain_linear.clear()
 	for i: int in range(count):
 		var p: AudioStreamPlayer = AudioStreamPlayer.new()
-		p.name = "GhostLoop%d" % i
+		p.name = "GhostIncapLoop%d" % i
 		p.bus = "Master"
 		p.volume_db = linear_to_db(0.0001)
 		add_child(p)
-		_ghost_loop_players.append(p)
-		_ghost_loop_gain_linear.append(0.0)
-
-func _ghost_state_key_for_ghost(g_v: Variant) -> String:
-	if _read_variant_bool(g_v, "is_incapacitated", false):
-		return "incapacitated"
-	return "alive"
-
-func _ghost_base_volume_for_state(state_key: String) -> float:
-	if state_key == "incapacitated":
-		return GHOST_BASE_VOLUME_INCAP
-	return GHOST_BASE_VOLUME_ALIVE
+		_ghost_incap_loop_players.append(p)
+		_ghost_incap_loop_gain_linear.append(0.0)
 
 func _apply_fear_global_gain(dt: float, active: bool) -> void:
 	if _fear_global_player == null or _fear_global_player.stream == null:
@@ -241,14 +290,15 @@ func _apply_fear_global_gain(dt: float, active: bool) -> void:
 	if not _fear_global_player.playing:
 		_fear_global_player.play()
 
-func _fade_out_all_ghost_loops(dt: float) -> void:
-	for i: int in range(_ghost_loop_players.size()):
-		var p: AudioStreamPlayer = _ghost_loop_players[i]
-		_ghost_loop_gain_linear[i] = lerpf(_ghost_loop_gain_linear[i], 0.0, clampf(dt * GHOST_VOLUME_SMOOTH_PER_SEC, 0.0, 1.0))
-		if _ghost_loop_gain_linear[i] <= 0.001:
+func _fade_out_ghost_incap_loops(dt: float) -> void:
+	for i: int in range(_ghost_incap_loop_players.size()):
+		var p: AudioStreamPlayer = _ghost_incap_loop_players[i]
+		_ghost_incap_loop_gain_linear[i] = lerpf(_ghost_incap_loop_gain_linear[i], 0.0, clampf(dt * GHOST_VOLUME_SMOOTH_PER_SEC, 0.0, 1.0))
+		if _ghost_incap_loop_gain_linear[i] <= 0.001:
 			p.stop()
+			_ghost_incap_loop_gain_linear[i] = 0.0
 			continue
-		p.volume_db = linear_to_db(maxf(0.0001, _ghost_loop_gain_linear[i]))
+		p.volume_db = linear_to_db(maxf(0.0001, _ghost_incap_loop_gain_linear[i]))
 
 func _variant_to_vec2(v: Variant, default_v: Vector2) -> Vector2:
 	if typeof(v) == TYPE_VECTOR2:
