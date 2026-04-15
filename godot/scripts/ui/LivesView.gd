@@ -22,6 +22,8 @@ func _process(_delta: float) -> void:
 func _draw() -> void:
 	if _pac_tex == null or _game_root == null or not _game_root.has_method("get_model"):
 		return
+	if size.x <= 0.0 or size.y <= 0.0:
+		return
 	var model: RefCounted = _game_root.call("get_model") as RefCounted
 	if model == null:
 		return

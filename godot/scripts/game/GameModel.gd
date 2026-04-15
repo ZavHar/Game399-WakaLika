@@ -44,6 +44,8 @@ const JUICE_POPUP_DURATION_MS: float = 800.0
 const FRUIT_SWEEP_DURATION_MS: float = 380.0
 ## After a half has no pellets, wait this long before the fruit appears on the opposite side.
 const FRUIT_SPAWN_DELAY_AFTER_SIDE_CLEAR_MS: float = 5000.0
+## Ghosts standing on EXIT tiles move slower (except incapacitated ghosts).
+const GHOST_EXIT_SPEED_MULT: float = 0.25
 
 const INCAP_PHASE_ROAM: String = "roam"
 const INCAP_PHASE_RETURN: String = "return_to_house"
@@ -640,11 +642,15 @@ func _scaled_fear_duration_ms() -> float:
 func _step_ghosts(dt: float) -> void:
 	for g_v: Variant in ghosts:
 		var g: RefCounted = g_v as RefCounted
+		var gpos_tile: Vector2i = g.get("pos") as Vector2i
+		var on_exit_tile: bool = board.is_exit(gpos_tile.x, gpos_tile.y)
+		var exit_mul: float = GHOST_EXIT_SPEED_MULT if (on_exit_tile and not bool(g.get("is_incapacitated"))) else 1.0
 		if not g.get("is_released"):
 			var acc_unreleased: float = float(g.get("step_acc"))
 			var speed_u: float = float(g.get("speed_tiles_per_sec"))
 			if fear_ms > 0.0:
 				speed_u *= GHOST_FEAR_SPEED_MULT
+			speed_u *= exit_mul
 			acc_unreleased += speed_u * dt
 			var usteps: int = 0
 			while acc_unreleased >= 1.0 and usteps < MAX_GHOST_TILE_STEPS_PER_FRAME:
@@ -663,6 +669,7 @@ func _step_ghosts(dt: float) -> void:
 			speed *= 2.0
 		elif fear_ms > 0.0:
 			speed *= GHOST_FEAR_SPEED_MULT
+		speed *= exit_mul
 		acc += speed * dt
 
 		var steps: int = 0
@@ -730,12 +737,13 @@ func _try_move_ghost_one_tile(g: RefCounted) -> bool:
 	var pos: Vector2i = g.get("pos") as Vector2i
 	var dest: Vector2i = g.get("dest") as Vector2i
 	var facing: int = int(g.get("dir"))
+	var just_warped: bool = _is_warp_step(g.get("anim_from") as Vector2i, pos)
 
-	var path: Array = find_path_bfs(pos, dest, facing) as Array
+	var path: Array = find_path_bfs(pos, dest, facing, false, false, false, just_warped) as Array
 	if path.size() < 2:
 		dest = random_walkable_tile_excluding(pos)
 		g.set("dest", dest)
-		path = find_path_bfs(pos, dest, facing) as Array
+		path = find_path_bfs(pos, dest, facing, false, false, false, just_warped) as Array
 		if path.size() < 2:
 			return false
 
@@ -1026,13 +1034,19 @@ func _wrap_tile(p: Vector2i) -> Vector2i:
 		y += H
 	return Vector2i(x, y)
 
-func find_path_bfs(start: Vector2i, goal: Vector2i, facing: int, allow_exit_door: bool = false, restrict_to_ghost_house: bool = false, ignore_walls: bool = false) -> Array:
-	var no_reverse: Array = _find_path_bfs_core(start, goal, facing, true, allow_exit_door, restrict_to_ghost_house, ignore_walls)
-	if no_reverse.size() > 0:
-		return no_reverse
-	return _find_path_bfs_core(start, goal, facing, false, allow_exit_door, restrict_to_ghost_house, ignore_walls)
+func find_path_bfs(start: Vector2i, goal: Vector2i, facing: int, allow_exit_door: bool = false, restrict_to_ghost_house: bool = false, ignore_walls: bool = false, force_forbid_first_reverse: bool = false) -> Array:
+	# Prefer non-warp tunnel paths first; only use torus warps when needed.
+	var p1: Array = _find_path_bfs_core(start, goal, facing, true, allow_exit_door, restrict_to_ghost_house, ignore_walls, false)
+	if p1.size() > 0:
+		return p1
+	var p2: Array = _find_path_bfs_core(start, goal, facing, true, allow_exit_door, restrict_to_ghost_house, ignore_walls, true)
+	if p2.size() > 0:
+		return p2
+	if force_forbid_first_reverse:
+		return []
+	return _find_path_bfs_core(start, goal, facing, false, allow_exit_door, restrict_to_ghost_house, ignore_walls, true)
 
-func _find_path_bfs_core(start: Vector2i, goal: Vector2i, facing: int, forbid_first_reverse: bool, allow_exit_door: bool, restrict_to_ghost_house: bool, ignore_walls: bool) -> Array:
+func _find_path_bfs_core(start: Vector2i, goal: Vector2i, facing: int, forbid_first_reverse: bool, allow_exit_door: bool, restrict_to_ghost_house: bool, ignore_walls: bool, allow_warp_tunnels: bool) -> Array:
 	start = _wrap_tile(start)
 	goal = _wrap_tile(goal)
 	if start == goal:
@@ -1049,7 +1063,10 @@ func _find_path_bfs_core(start: Vector2i, goal: Vector2i, facing: int, forbid_fi
 	var parent: Dictionary = {}
 	parent[_cell_key(start)] = null
 
-	var skip_back: bool = forbid_first_reverse and _count_walkable_neighbors_opts(start, allow_exit_door, restrict_to_ghost_house, ignore_walls) > 1
+	# Preserve original "don't reverse at intersections" semantics using full topology.
+	# If this pass temporarily forbids warp steps, we still count warp neighbors here so
+	# tunnel exits don't look like dead ends and bounce backward.
+	var skip_back: bool = forbid_first_reverse and _count_walkable_neighbors_opts(start, allow_exit_door, restrict_to_ghost_house, ignore_walls, true) > 1
 
 	while qi < q.size():
 		var cur: Vector2i = q[qi] as Vector2i
@@ -1062,9 +1079,11 @@ func _find_path_bfs_core(start: Vector2i, goal: Vector2i, facing: int, forbid_fi
 			var ny: int = cur.y + d.y
 			if board.is_ghost_step_blocked_opts(cur.x, cur.y, nx, ny, allow_exit_door, restrict_to_ghost_house, ignore_walls):
 				continue
+			var nex: Vector2i = _wrap_tile(Vector2i(nx, ny))
+			if not allow_warp_tunnels and _is_warp_step(cur, nex):
+				continue
 			if skip_back and cur == start and _is_back_neighbor(start, facing, nx, ny):
 				continue
-			var nex: Vector2i = _wrap_tile(Vector2i(nx, ny))
 			var key: int = _cell_key(nex)
 			if visited.has(key):
 				continue
@@ -1095,12 +1114,20 @@ func _cell_key(p: Vector2i) -> int:
 		wy += H
 	return wy * FULL_W + wx
 
-func _count_walkable_neighbors_opts(p: Vector2i, allow_exit_door: bool, restrict_to_ghost_house: bool, ignore_walls: bool = false) -> int:
+func _count_walkable_neighbors_opts(p: Vector2i, allow_exit_door: bool, restrict_to_ghost_house: bool, ignore_walls: bool = false, allow_warp_tunnels: bool = true) -> int:
 	var n: int = 0
 	for d: Vector2i in [Vector2i(0, -1), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(1, 0)]:
-		if not board.is_ghost_step_blocked_opts(p.x, p.y, p.x + d.x, p.y + d.y, allow_exit_door, restrict_to_ghost_house, ignore_walls):
-			n += 1
+		if board.is_ghost_step_blocked_opts(p.x, p.y, p.x + d.x, p.y + d.y, allow_exit_door, restrict_to_ghost_house, ignore_walls):
+			continue
+		if not allow_warp_tunnels:
+			var nex: Vector2i = _wrap_tile(Vector2i(p.x + d.x, p.y + d.y))
+			if _is_warp_step(p, nex):
+				continue
+		n += 1
 	return n
+
+func _is_warp_step(from: Vector2i, to: Vector2i) -> bool:
+	return abs(to.x - from.x) > 1 or abs(to.y - from.y) > 1
 
 func _is_back_neighbor(start: Vector2i, facing: int, nx: int, ny: int) -> bool:
 	var back: int = _opposite_dir(facing)
