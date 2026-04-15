@@ -26,6 +26,14 @@ func _process(delta: float) -> void:
 	if _game_root == null:
 		_game_root = get_node_or_null(game_root_path)
 
+	if _game_root != null and _game_root.has_method("get_model"):
+		var model: RefCounted = _game_root.call("get_model") as RefCounted
+		if model != null and bool(model.get("is_game_over")):
+			_pulse_timer_s = 0.0
+			_pulses = []
+			queue_redraw()
+			return
+
 	_pulse_timer_s += delta
 	if _pulse_timer_s >= PULSE_INTERVAL_S:
 		_pulse_timer_s -= PULSE_INTERVAL_S
@@ -45,6 +53,10 @@ func _process(delta: float) -> void:
 
 func _draw() -> void:
 	if _target == null:
+		return
+	if _target.size.x <= 0.0 or _target.size.y <= 0.0:
+		return
+	if size.x <= 0.0 or size.y <= 0.0:
 		return
 	var global_rect: Rect2 = Rect2(_target.global_position, _target.size)
 	var p0: Vector2 = global_rect.position - global_position

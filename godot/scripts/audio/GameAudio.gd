@@ -1,13 +1,18 @@
 extends Node
 class_name GameAudio
 
+signal start_song_finished
+signal pac_death_finished
+
 ## Paths without extension — first match wins: .wav, then .mp3, then .ogg
 const MUSIC_BASE: String = "res://assets/audio/music_loop"
+const START_SONG_BASE: String = "res://assets/audio/start_song"
 const PELLET_BASE: String = "res://assets/audio/pellet"
 const PELLET_ALT_BASE: String = "res://assets/audio/pellet_alt"
 const FRUIT_BASE: String = "res://assets/audio/fruit"
 const GHOST_EATEN_BASE: String = "res://assets/audio/ghost_eaten"
 const GAME_OVER_BASE: String = "res://assets/audio/game_over"
+const PAC_DEATH_BASE: String = "res://assets/audio/pac_death"
 const GHOST_ALIVE_LOOP_BASE: String = "res://assets/audio/ghost_alive"
 const GHOST_FEAR_LOOP_BASE: String = "res://assets/audio/ghost_fear"
 const GHOST_INCAP_LOOP_BASE: String = "res://assets/audio/ghost_incapacitated"
@@ -34,6 +39,7 @@ var _pellet_player_alt: AudioStreamPlayer
 var _fruit_player: AudioStreamPlayer
 var _ghost_eaten_player: AudioStreamPlayer
 var _game_over_player: AudioStreamPlayer
+var _pac_death_player: AudioStreamPlayer
 var _ghost_state_streams: Dictionary = {}
 ## Per-ghost slots used only for `incapacitated` loops (alive uses `_ghost_alive_global_player`).
 var _ghost_incap_loop_players: Array[AudioStreamPlayer] = []
@@ -44,6 +50,7 @@ var _fear_global_player: AudioStreamPlayer
 var _fear_global_gain_linear: float = 0.0
 var _rng: RandomNumberGenerator = RandomNumberGenerator.new()
 var _pellet_toggle: bool = false
+var _start_song_player: AudioStreamPlayer
 
 func _ready() -> void:
 	_music_player = _make_player("Music", MUSIC_BASE, 0.22, true)
@@ -54,6 +61,9 @@ func _ready() -> void:
 	_fruit_player = _make_player("Fruit", FRUIT_BASE, 0.45, false)
 	_ghost_eaten_player = _make_player("GhostEaten", GHOST_EATEN_BASE, 0.4, false)
 	_game_over_player = _make_player("GameOver", GAME_OVER_BASE, 0.5, false)
+	_pac_death_player = _make_player("PacDeath", PAC_DEATH_BASE, 0.6, false)
+	if _pac_death_player != null:
+		_pac_death_player.finished.connect(func() -> void: pac_death_finished.emit())
 	_ghost_state_streams["alive"] = _load_audio_stream_from_base(GHOST_ALIVE_LOOP_BASE, true)
 	_ghost_state_streams["incapacitated"] = _load_audio_stream_from_base(GHOST_INCAP_LOOP_BASE, true)
 	_ghost_alive_global_player = AudioStreamPlayer.new()
@@ -71,6 +81,16 @@ func _ready() -> void:
 	add_child(_fear_global_player)
 	_fear_global_gain_linear = 0.0
 	_init_ghost_incap_loop_players(4)
+	_start_song_player = AudioStreamPlayer.new()
+	_start_song_player.name = "StartSong"
+	_start_song_player.bus = "Master"
+	_start_song_player.volume_db = linear_to_db(0.4)
+	var start_stream: AudioStream = _resolve_audio_stream(START_SONG_BASE)
+	_apply_stream_loop(start_stream, false)
+	_start_song_player.stream = start_stream
+	add_child(_start_song_player)
+	if start_stream != null:
+		_start_song_player.finished.connect(_on_start_song_finished)
 	_rng.randomize()
 
 func _make_player(node_name: String, base_path_without_ext: String, volume_linear: float, looped: bool) -> AudioStreamPlayer:
@@ -121,6 +141,25 @@ func _play_if_ready(p: AudioStreamPlayer, pitch_scale: float = 1.0) -> void:
 	p.pitch_scale = pitch_scale
 	p.play()
 
+## Pauses the whole scene tree until `start_song` finishes (this node stays `PROCESS_MODE_ALWAYS`).
+## Returns false if no `start_song` file — caller should start BGM immediately.
+func try_begin_start_song_blocking(tree: SceneTree) -> bool:
+	if tree == null:
+		return false
+	if _start_song_player == null or _start_song_player.stream == null:
+		return false
+	process_mode = Node.PROCESS_MODE_ALWAYS
+	tree.paused = true
+	_start_song_player.play()
+	return true
+
+func _on_start_song_finished() -> void:
+	process_mode = Node.PROCESS_MODE_INHERIT
+	var scene_tree: SceneTree = get_tree()
+	if scene_tree != null and scene_tree.paused:
+		scene_tree.paused = false
+	start_song_finished.emit()
+
 func try_start_music() -> void:
 	if _music_started:
 		return
@@ -152,6 +191,12 @@ func play_step_sfx(model: RefCounted) -> void:
 	if bool(model.get("sfx_game_over")):
 		stop_music()
 		_play_if_ready(_game_over_player, 1.0)
+
+func play_pac_death() -> bool:
+	if _pac_death_player == null or _pac_death_player.stream == null:
+		return false
+	_pac_death_player.play()
+	return true
 
 func maybe_play_low_time_warning(_prev_sec: int, _next_sec: int) -> void:
 	pass

@@ -10,8 +10,9 @@ uniform float time = 0.0;
 uniform float aspect : hint_range(0.2, 4.0) = 0.78;
 
 void fragment() {
+	float asp = max(aspect, 0.001);
 	vec2 uv0 = UV - vec2(0.5);
-	uv0.x *= aspect;
+	uv0.x *= asp;
 	float r = length(uv0);
 	float ang = atan(uv0.y, uv0.x);
 
@@ -40,7 +41,7 @@ void fragment() {
 			cos(UV.x * 8.4 + t * 0.68) + cos(UV.y * 7.3 - t * 0.42)
 	) * 0.035;
 	vec2 u_w = UV + warp - vec2(0.5);
-	u_w.x *= aspect;
+	u_w.x *= asp;
 	float r_w = length(u_w);
 	float rip_w = sin(r_w * 22.0 - t * 3.4) * 0.5 + 0.5;
 

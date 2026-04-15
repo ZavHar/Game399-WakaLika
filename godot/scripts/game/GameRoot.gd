@@ -11,6 +11,7 @@ const DIR_RIGHT: int = 3
 var _accumulator_s: float = 0.0
 var _sim_time_s: float = 0.0
 var _hitstop_left_s: float = 0.0
+var _ui_time_remaining_s: float = float(Constants.LEVEL_DURATION_S)
 
 var score_label: Control
 var time_label: Label
@@ -31,6 +32,7 @@ var _last_board_revision: int = 0
 var _show_ghost_paths: bool = false
 var _toggle_paths_key_was_down: bool = false
 var _vacuum_key_was_down: bool = false
+var _death_freeze: bool = false
 
 func _ready() -> void:
 	# Main adds the HUD label to group `game_status_hud` in _ready; run boot after that.
@@ -40,6 +42,7 @@ func _boot_after_main() -> void:
 	_accumulator_s = 0.0
 	_sim_time_s = 0.0
 	_hitstop_left_s = 0.0
+	_ui_time_remaining_s = float(Constants.LEVEL_DURATION_S)
 	_show_ghost_paths = false
 	_toggle_paths_key_was_down = false
 	_vacuum_key_was_down = false
@@ -97,7 +100,10 @@ func _boot_after_main() -> void:
 		if time_label != null:
 			time_label.text = str(int(Constants.LEVEL_DURATION_S))
 		if game_audio != null:
-			game_audio.try_start_music()
+			if game_audio.try_begin_start_song_blocking(get_tree()):
+				game_audio.start_song_finished.connect(_on_start_song_finished_boot, CONNECT_ONE_SHOT)
+			else:
+				game_audio.try_start_music()
 	else:
 		if score_label != null:
 			_set_score_label_raw("Load Error")
@@ -105,6 +111,16 @@ func _boot_after_main() -> void:
 			time_label.text = "--"
 
 func _physics_process(delta: float) -> void:
+	if _death_freeze:
+		# Freeze simulation until death audio completes; keep HUD + music running.
+		_sim_time_s += delta
+		_ui_time_remaining_s = maxf(0.0, _ui_time_remaining_s - delta)
+		if time_label != null:
+			time_label.text = str(int(_ui_time_remaining_s))
+		if game_audio != null:
+			game_audio.update_ghost_ambience(null, delta)
+		_apply_hud_juice(delta)
+		return
 	_handle_input()
 	if game_audio != null:
 		game_audio.update_ghost_ambience(_model, delta)
@@ -127,6 +143,9 @@ func _step_simulation(dt: float) -> void:
 		var prev_time_remaining_s: float = float(_model.get("time_remaining_s"))
 		_model.call("step", dt)
 		if game_audio != null:
+			if bool(_model.get("sfx_pac_death")):
+				_begin_death_freeze()
+				return
 			game_audio.play_step_sfx(_model)
 			var next_time_remaining_s: float = float(_model.get("time_remaining_s"))
 			game_audio.maybe_play_low_time_warning(int(prev_time_remaining_s), int(next_time_remaining_s))
@@ -143,6 +162,7 @@ func _step_simulation(dt: float) -> void:
 		var hs_ms: float = float(_model.get("hitstop_ms"))
 		_hitstop_left_s = maxf(_hitstop_left_s, hs_ms / 1000.0)
 		var time_remaining_s: float = float(_model.get("time_remaining_s"))
+		_ui_time_remaining_s = time_remaining_s
 		if score_label != null:
 			if bool(_model.get("is_game_over")):
 				_set_score_label_raw("GAME OVER   Score: %d" % score)
@@ -155,7 +175,9 @@ func _apply_hud_juice(_delta: float) -> void:
 	if score_label == null:
 		return
 	var low_time: bool = false
-	if _model != null:
+	if _death_freeze:
+		low_time = _ui_time_remaining_s <= 10.0 and (_model == null or not bool(_model.get("is_game_over")))
+	elif _model != null:
 		low_time = float(_model.get("time_remaining_s")) <= 10.0 and not bool(_model.get("is_game_over"))
 	score_label.scale = Vector2.ONE
 	if low_time:
@@ -183,6 +205,35 @@ func _set_score_label_score(score: int) -> void:
 func get_model() -> RefCounted:
 	return _model
 
+func _on_start_song_finished_boot() -> void:
+	_accumulator_s = 0.0
+	if game_audio != null:
+		game_audio.try_start_music()
+
+func _begin_death_freeze() -> void:
+	if _death_freeze:
+		return
+	_death_freeze = true
+	_accumulator_s = 0.0
+	if game_audio != null:
+		# If this death ends the game, stop the song immediately (death SFX still plays).
+		if _model != null and bool(_model.get("is_game_over")):
+			game_audio.stop_music()
+		game_audio.pac_death_finished.connect(_on_pac_death_finished, CONNECT_ONE_SHOT)
+		game_audio.play_pac_death()
+
+func _on_pac_death_finished() -> void:
+	_death_freeze = false
+	_accumulator_s = 0.0
+	var game_over: bool = false
+	if _model != null:
+		game_over = bool(_model.get("is_game_over"))
+		if not game_over:
+			_model.set("time_remaining_s", _ui_time_remaining_s)
+			_model.call("reset_after_death")
+	if game_audio != null and not game_over:
+		game_audio.try_start_music()
+
 func _handle_input() -> void:
 	var toggle_down: bool = Input.is_key_pressed(KEY_P)
 	if toggle_down and not _toggle_paths_key_was_down:
@@ -199,13 +250,13 @@ func _handle_input() -> void:
 
 	if _model == null:
 		return
-	var next_dir: int = int(_model.get("desired_dir"))
+	var mask: int = 0
 	if Input.is_action_pressed("move_up"):
-		next_dir = DIR_UP
-	elif Input.is_action_pressed("move_down"):
-		next_dir = DIR_DOWN
-	elif Input.is_action_pressed("move_left"):
-		next_dir = DIR_LEFT
-	elif Input.is_action_pressed("move_right"):
-		next_dir = DIR_RIGHT
-	_model.call("set_desired_dir", next_dir)
+		mask |= 1 << DIR_UP
+	if Input.is_action_pressed("move_down"):
+		mask |= 1 << DIR_DOWN
+	if Input.is_action_pressed("move_left"):
+		mask |= 1 << DIR_LEFT
+	if Input.is_action_pressed("move_right"):
+		mask |= 1 << DIR_RIGHT
+	_model.call("set_held_dirs_mask", mask)

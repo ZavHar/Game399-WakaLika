@@ -55,7 +55,6 @@ func _draw() -> void:
 		var gy: float = gv.y
 		var id: String = g.get("id") as String
 		var base: Color = _visual_color_for_ghost(id, g)
-		var phase: String = str(g.get("incapacitated_phase"))
 
 		# gv is tile-space center (matches pac_pos convention).
 		var render_positions: Array = _ghost_render_positions(Vector2(gx, gy), 28, 36)
@@ -68,7 +67,7 @@ func _draw() -> void:
 			var draw_tex: Texture2D = _ghost_eyes_tex if incap else _ghost_tex
 			var draw_col: Color = Color(1, 1, 1, 1) if incap else base
 			if draw_tex != null:
-				var sz: float = CELL_PX * (0.62 if incap else 0.95)
+				var sz: float = maxf(1.0, CELL_PX * (0.62 if incap else 0.95))
 				draw_texture_rect(draw_tex, Rect2(cx - sz * 0.5, cy - sz * 0.5, sz, sz), false, draw_col)
 			else:
 				draw_circle(center, CELL_PX * 0.30, base)
@@ -164,7 +163,7 @@ func _draw_ghost_trail(id: String) -> void:
 			var cy: float = rp.y * CELL_PX
 			var trail_tex: Texture2D = _ghost_eyes_tex if incap_snap else _ghost_tex
 			if trail_tex != null:
-				var sz: float = CELL_PX * ((0.40 + 0.22 * k) if incap_snap else (0.55 + 0.43 * k))
+				var sz: float = maxf(1.0, CELL_PX * ((0.40 + 0.22 * k) if incap_snap else (0.55 + 0.43 * k)))
 				var trail_col: Color = Color(1, 1, 1, alpha) if incap_snap else col
 				draw_texture_rect(trail_tex, Rect2(cx - sz * 0.5, cy - sz * 0.5, sz, sz), false, trail_col)
 			else:

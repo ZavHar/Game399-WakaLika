@@ -26,3 +26,4 @@ res://scripts/rendering/FloatingParticlesView.gd
 res://scripts/rendering/ScorePopupsView.gd
 res://scripts/data/Constants.gd
 res://shaders/screen_bg_noise.gdshader
+res://scripts/ui/LivesView.gd

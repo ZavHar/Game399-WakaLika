@@ -18,14 +18,17 @@ const SPEED_RAMP_COMPLETE_FRACTION: float = 0.9
 const PAC_SUBSTEPS_PER_FRAME: int = 6
 const PELLET_SCORE: int = 10
 const PELLET_COLLECT_RADIUS_TILES: float = 0.35
-const TURN_CENTER_EPS_TILES: float = 0.14
+## Larger cornering window lets Pac commit turns earlier than center (classic cornering feel).
+const TURN_CENTER_EPS_TILES: float = 0.34
 const SNAP_IF_BEYOND_TILES: float = 1.0
 
 const GHOST_TILES_PER_SEC: float = 3.0
 const MAX_GHOST_TILE_STEPS_PER_FRAME: int = 8
 const ORANGE_SCATTER_DISTANCE: int = 8
 
+## Base fear length at full level timer; scales down linearly to `FEAR_DURATION_END_FRACTION` when time hits 0.
 const FEAR_DURATION_MS: float = 10000.0
+const FEAR_DURATION_END_FRACTION: float = 0.5
 ## Tile speed multiplier while power-pellet fear is active (non-incapacitated ghosts only).
 const GHOST_FEAR_SPEED_MULT: float = 0.6
 const GHOST_EATEN_SCORE: int = 200
@@ -39,6 +42,8 @@ const VACUUM_RADIUS_TILES: float = 3.25
 const GHOST_EATEN_COMBO_BASE: int = 200
 const JUICE_POPUP_DURATION_MS: float = 800.0
 const FRUIT_SWEEP_DURATION_MS: float = 380.0
+## After a half has no pellets, wait this long before the fruit appears on the opposite side.
+const FRUIT_SPAWN_DELAY_AFTER_SIDE_CLEAR_MS: float = 5000.0
 
 const INCAP_PHASE_ROAM: String = "roam"
 const INCAP_PHASE_RETURN: String = "return_to_house"
@@ -57,6 +62,11 @@ var left_side_fruit_flash_ms: float = 0.0
 var right_side_fruit_flash_ms: float = 0.0
 var left_side_fruit_sweep_ms: float = 0.0
 var right_side_fruit_sweep_ms: float = 0.0
+## Right half cleared → delay before `fruit_active_left`; left half cleared → delay before `fruit_active_right`.
+var _fruit_spawn_delay_left_ms: float = 0.0
+var _fruit_spawn_delay_right_ms: float = 0.0
+var _fruit_spawn_left_episode: bool = false
+var _fruit_spawn_right_episode: bool = false
 var hue_shift_amount: float = 0.0
 var hue_shift_target: float = 0.0
 var vacuum_mode: bool = false
@@ -71,10 +81,18 @@ var time_remaining_s: float = LEVEL_DURATION_S
 var _pac_speed_ramped: float = PAC_TILES_PER_SEC
 var _ghost_speed_ramped: float = GHOST_TILES_PER_SEC
 var is_game_over: bool = false
+var lives: int = 3
+var pac_waiting_for_input: bool = true
+var _pac_death_triggered: bool = false
 
 var pac_pos: Vector2 = Vector2(1.5, 1.5) # tile coords, continuous
 var pac_dir: int = DIR_LEFT
 var desired_dir: int = DIR_LEFT
+## Bitmask `(1 << dir)` for `DIR_*` while keys are held; 0 = no direction input this frame.
+var held_dirs_mask: int = 0
+## Stabilize dual-key resolution at intersections (avoids flip-flopping each substep).
+var _dual_input_latch_dir: int = -1
+var _dual_input_latch_tile: Vector2i = Vector2i(-999, -999)
 var buffered_dir: int = -1
 
 var pellets: Array = [] # Array[Array[bool]]
@@ -85,6 +103,7 @@ var sfx_power_pellet: bool = false
 var sfx_fruit_left: bool = false
 var sfx_fruit_right: bool = false
 var sfx_ghost_eaten: bool = false
+var sfx_pac_death: bool = false
 var sfx_game_over: bool = false
 var hitstop_ms: float = 0.0
 var ghost_eat_chain: int = 0
@@ -107,9 +126,15 @@ func init_from_board(board_model: BoardModel) -> void:
 	pac_pos = Vector2(float(spawn_tile.x) + 0.5, float(spawn_tile.y) + 0.5)
 	pac_dir = DIR_LEFT
 	desired_dir = pac_dir
+	held_dirs_mask = 0
+	_dual_input_latch_dir = -1
+	_dual_input_latch_tile = Vector2i(-999, -999)
 	buffered_dir = -1
 	fear_ms = 0.0
 	is_game_over = false
+	lives = 3
+	pac_waiting_for_input = true
+	_pac_death_triggered = false
 
 	_recount_pellets_by_side()
 	left_side_clear_progress = 1.0 if pellets_left_left == 0 else 0.0
@@ -118,6 +143,10 @@ func init_from_board(board_model: BoardModel) -> void:
 	right_side_fruit_flash_ms = 0.0
 	left_side_fruit_sweep_ms = 0.0
 	right_side_fruit_sweep_ms = 0.0
+	_fruit_spawn_delay_left_ms = 0.0
+	_fruit_spawn_delay_right_ms = 0.0
+	_fruit_spawn_left_episode = false
+	_fruit_spawn_right_episode = false
 	hue_shift_amount = 0.0
 	hue_shift_target = 0.0
 	vacuum_mode = false
@@ -153,13 +182,25 @@ func _recount_pellets_by_side() -> void:
 	pellets_left_right = right_count
 
 func set_desired_dir(next_dir: int) -> void:
-	desired_dir = next_dir
-	if next_dir != pac_dir:
-		buffered_dir = next_dir
+	set_held_dirs_mask(1 << next_dir)
+
+func set_held_dirs_mask(mask: int) -> void:
+	var m: int = mask & 15
+	if m != held_dirs_mask:
+		_dual_input_latch_dir = -1
+		_dual_input_latch_tile = Vector2i(-999, -999)
+	held_dirs_mask = m
+	var held: Array[int] = _dirs_from_held_mask(held_dirs_mask)
+	if held.size() == 1:
+		desired_dir = held[0]
+	elif held.size() > 1:
+		desired_dir = _pick_priority_dir_first(held)
 
 func step(dt: float) -> void:
 	_clear_sfx_flags()
 	if is_game_over:
+		return
+	if _pac_death_triggered:
 		return
 
 	# timer
@@ -181,6 +222,7 @@ func step(dt: float) -> void:
 	_decrement_incap_wait_ms(dt)
 	_tick_ghost_release_timers(dt)
 	_decrement_fruit_flash_ms(dt)
+	_decrement_fruit_spawn_delays(dt)
 	_update_hue_shift(dt)
 	_tick_juice_popups(dt)
 
@@ -190,7 +232,7 @@ func step(dt: float) -> void:
 	# Pac movement with substeps (matches TS structure)
 	var sub_dt: float = dt / float(PAC_SUBSTEPS_PER_FRAME)
 	for i: int in range(PAC_SUBSTEPS_PER_FRAME):
-		_advance_pac(sub_dt, desired_dir)
+		_advance_pac(sub_dt)
 		_collect_pellets()
 	_handle_fruit_collection()
 
@@ -227,6 +269,7 @@ func _clear_sfx_flags() -> void:
 	sfx_fruit_left = false
 	sfx_fruit_right = false
 	sfx_ghost_eaten = false
+	sfx_pac_death = false
 	sfx_game_over = false
 	hitstop_ms = 0.0
 
@@ -359,6 +402,13 @@ func _decrement_fruit_flash_ms(dt: float) -> void:
 	left_side_fruit_sweep_ms = maxf(0.0, left_side_fruit_sweep_ms - dms)
 	right_side_fruit_sweep_ms = maxf(0.0, right_side_fruit_sweep_ms - dms)
 
+func _decrement_fruit_spawn_delays(dt: float) -> void:
+	var dms: float = dt * 1000.0
+	if _fruit_spawn_delay_left_ms > 0.0:
+		_fruit_spawn_delay_left_ms = maxf(0.0, _fruit_spawn_delay_left_ms - dms)
+	if _fruit_spawn_delay_right_ms > 0.0:
+		_fruit_spawn_delay_right_ms = maxf(0.0, _fruit_spawn_delay_right_ms - dms)
+
 func _update_hue_shift(dt: float) -> void:
 	var diff: float = hue_shift_target - hue_shift_amount
 	diff = fposmod(diff + 0.5, 1.0) - 0.5
@@ -417,7 +467,7 @@ func _random_ghost_house_tile(exclude: Vector2i) -> Vector2i:
 	return candidates[_rng.randi_range(0, candidates.size() - 1)] as Vector2i
 
 ## Returns true if this ghost should skip normal chase AI this tick (web `updateGhostDestinations` incap block).
-func _update_incap_ghost_dest(g: RefCounted, gpos: Vector2i, gdir: int) -> bool:
+func _update_incap_ghost_dest(g: RefCounted, gpos: Vector2i, _gdir: int) -> bool:
 	if not bool(g.get("is_incapacitated")):
 		return false
 	var phase_str: String = str(g.get("incapacitated_phase"))
@@ -578,6 +628,14 @@ func random_walkable_tile_excluding(exclude: Vector2i) -> Vector2i:
 
 func _manhattan(a: Vector2i, b: Vector2i) -> int:
 	return abs(a.x - b.x) + abs(a.y - b.y)
+
+## Power-pellet fear duration: 100% of base with full level clock, 50% of base when `time_remaining_s` is 0.
+func _scaled_fear_duration_ms() -> float:
+	var denom: float = LEVEL_DURATION_S
+	if denom <= 0.0001:
+		return FEAR_DURATION_MS * FEAR_DURATION_END_FRACTION
+	var u: float = clampf(1.0 - time_remaining_s / denom, 0.0, 1.0)
+	return FEAR_DURATION_MS * lerpf(1.0, FEAR_DURATION_END_FRACTION, u)
 
 func _step_ghosts(dt: float) -> void:
 	for g_v: Variant in ghosts:
@@ -901,6 +959,9 @@ func _check_pac_ghost_collisions() -> void:
 	var wp: Vector2 = _pac_pos_wrapped_fractional()
 	var r2: float = PAC_GHOST_COLLISION_RADIUS_TILES * PAC_GHOST_COLLISION_RADIUS_TILES
 
+	if _pac_death_triggered:
+		return
+
 	for g_v: Variant in ghosts:
 		var g: RefCounted = g_v as RefCounted
 		if bool(g.get("is_incapacitated")):
@@ -925,9 +986,11 @@ func _check_pac_ghost_collisions() -> void:
 			sfx_ghost_eaten = true
 			return
 
-		is_game_over = true
-		_add_hitstop(95.0)
-		sfx_game_over = true
+		lives = max(0, lives - 1)
+		_pac_death_triggered = true
+		sfx_pac_death = true
+		if lives <= 0:
+			is_game_over = true
 		return
 
 func _direction_from_step(from: Vector2i, to: Vector2i) -> int:
@@ -1053,8 +1116,10 @@ func _opposite_dir(dir: int) -> int:
 		return DIR_RIGHT
 	return DIR_LEFT
 
-func _advance_pac(dt: float, desired: int) -> void:
-	var dir: int = _resolve_pac_dir_for_frame(desired)
+func _advance_pac(dt: float) -> void:
+	if pac_waiting_for_input and held_dirs_mask == 0:
+		return
+	var dir: int = _resolve_pac_dir_from_held()
 	var v: Vector2 = _dir_to_vec(dir)
 	var speed: float = _pac_speed_ramped
 
@@ -1118,7 +1183,7 @@ func _collect_pellets() -> void:
 		score += PELLET_SCORE
 		if is_power:
 			var already_in_fear: bool = fear_ms > 0.0
-			fear_ms = FEAR_DURATION_MS
+			fear_ms = _scaled_fear_duration_ms()
 			if not already_in_fear:
 				_reverse_all_ghost_dirs()
 			sfx_power_pellet = true
@@ -1148,7 +1213,7 @@ func _collect_pellets_vacuum() -> void:
 			score += PELLET_SCORE
 			if is_power:
 				var already_in_fear: bool = fear_ms > 0.0
-				fear_ms = FEAR_DURATION_MS
+				fear_ms = _scaled_fear_duration_ms()
 				if not already_in_fear:
 					_reverse_all_ghost_dirs()
 				sfx_power_pellet = true
@@ -1179,9 +1244,25 @@ func _right_fruit_pos() -> Vector2i:
 	return Vector2i(2 * 14 - 1 - LEFT_FRUIT_SPAWN_LOCAL.x, LEFT_FRUIT_SPAWN_LOCAL.y)
 
 func _sync_fruit_actives() -> void:
-	# Web parity: fruit appears on opposite side of a cleared half.
-	fruit_active_left = pellets_left_right == 0
-	fruit_active_right = pellets_left_left == 0
+	# Fruit spawns on the opposite side of a cleared half, after a short delay.
+	var right_cleared: bool = pellets_left_right == 0
+	var left_cleared: bool = pellets_left_left == 0
+	if right_cleared:
+		if not _fruit_spawn_left_episode:
+			_fruit_spawn_left_episode = true
+			_fruit_spawn_delay_left_ms = FRUIT_SPAWN_DELAY_AFTER_SIDE_CLEAR_MS
+	else:
+		_fruit_spawn_left_episode = false
+		_fruit_spawn_delay_left_ms = 0.0
+	if left_cleared:
+		if not _fruit_spawn_right_episode:
+			_fruit_spawn_right_episode = true
+			_fruit_spawn_delay_right_ms = FRUIT_SPAWN_DELAY_AFTER_SIDE_CLEAR_MS
+	else:
+		_fruit_spawn_right_episode = false
+		_fruit_spawn_delay_right_ms = 0.0
+	fruit_active_left = right_cleared and _fruit_spawn_delay_left_ms <= 0.0
+	fruit_active_right = left_cleared and _fruit_spawn_delay_right_ms <= 0.0
 
 func _load_half_layout_pool() -> void:
 	_half_layouts = []
@@ -1289,7 +1370,21 @@ static func _dir_to_vec(dir: int) -> Vector2:
 		return Vector2(1.0, 0.0)
 	return Vector2.ZERO
 
-func _resolve_pac_dir_for_frame(desired: int) -> int:
+func _dirs_from_held_mask(mask: int) -> Array[int]:
+	var out: Array[int] = []
+	for d: int in [DIR_UP, DIR_DOWN, DIR_LEFT, DIR_RIGHT]:
+		if (mask & (1 << d)) != 0:
+			out.append(d)
+	return out
+
+func _pick_priority_dir_first(candidates: Array[int]) -> int:
+	var order: Array[int] = [DIR_UP, DIR_LEFT, DIR_RIGHT, DIR_DOWN]
+	for d: int in order:
+		if d in candidates:
+			return d
+	return candidates[0]
+
+func _resolve_pac_dir_single(desired: int) -> int:
 	var dir: int = pac_dir
 	if desired == dir:
 		return dir
@@ -1300,6 +1395,55 @@ func _resolve_pac_dir_for_frame(desired: int) -> int:
 	if not _can_pac_start_turn(desired):
 		return dir
 	return desired
+
+func _resolve_pac_dir_from_held() -> int:
+	var held: Array[int] = _dirs_from_held_mask(held_dirs_mask)
+	if held.is_empty():
+		return pac_dir
+	if pac_waiting_for_input:
+		pac_waiting_for_input = false
+	if held.size() == 1:
+		return _resolve_pac_dir_single(held[0])
+
+	var at_center: bool = _distance_to_tile_center(pac_pos.x, pac_pos.y) <= TURN_CENTER_EPS_TILES
+	var valid: Array[int] = []
+	for d: int in held:
+		if _can_pac_start_turn(d):
+			valid.append(d)
+	if valid.is_empty():
+		return pac_dir
+
+	if not at_center:
+		if pac_dir in held:
+			return pac_dir
+		return _resolve_pac_dir_single(_pick_priority_dir_first(held))
+
+	if valid.size() == 1:
+		return valid[0]
+
+	# Same tile + two keys: `pac_dir` can flip every substep (straight ↔ turn), cancelling motion.
+	# Latch one choice per tile until inputs or tile changes.
+	var tile_i: Vector2i = Vector2i(int(floor(pac_pos.x)), int(floor(pac_pos.y)))
+	if _dual_input_latch_tile != tile_i:
+		_dual_input_latch_dir = -1
+		_dual_input_latch_tile = tile_i
+	if _dual_input_latch_dir >= 0 and _dual_input_latch_dir in valid:
+		return _dual_input_latch_dir
+
+	var chosen: int
+	if pac_dir in valid:
+		var turns: Array[int] = []
+		for d: int in valid:
+			if d != pac_dir:
+				turns.append(d)
+		if turns.size() > 0:
+			chosen = _pick_priority_dir_first(turns)
+		else:
+			chosen = pac_dir
+	else:
+		chosen = _pick_priority_dir_first(valid)
+	_dual_input_latch_dir = chosen
+	return chosen
 
 func _distance_to_tile_center(px: float, py: float) -> float:
 	var cx: float = floor(px) + 0.5
@@ -1375,3 +1519,19 @@ func _clamp_pac_axis(prev: Vector2, next: Vector2, dir: int) -> Vector2:
 			ny = float(int(floor(prev.y))) + 0.5
 
 	return Vector2(nx, ny)
+
+func reset_after_death() -> void:
+	# Reset actors as if a new round started; preserve pellets/score/time.
+	var preferred_spawn: Vector2i = Vector2i(13, 26)
+	var spawn_tile: Vector2i = board.nearest_pac_spawn_tile(preferred_spawn)
+	pac_pos = Vector2(float(spawn_tile.x) + 0.5, float(spawn_tile.y) + 0.5)
+	pac_dir = DIR_LEFT
+	desired_dir = pac_dir
+	held_dirs_mask = 0
+	_dual_input_latch_dir = -1
+	_dual_input_latch_tile = Vector2i(-999, -999)
+	pac_waiting_for_input = true
+	fear_ms = 0.0
+	ghost_eat_chain = 0
+	_pac_death_triggered = false
+	_init_ghosts()

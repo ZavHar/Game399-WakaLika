@@ -2,7 +2,8 @@ extends Node2D
 
 const CELL_PX: float = 18.0
 
-const FRUIT_COLOR: Color = Color(0.976, 0.451, 0.086, 1.0) # approx #f97316
+## Fallback if `fruit.svg` fails to load.
+const FRUIT_COLOR: Color = Color(0.976, 0.451, 0.086, 1.0)
 const FRUIT_SIDE_FLASH_DURATION_MS: float = 250.0
 const FRUIT_SIDE_FLASH_MAX_ALPHA: float = 0.35
 const FRUIT_SIDE_FLASH_FADE_POW: float = 2.0
@@ -13,6 +14,7 @@ var _model: RefCounted = null
 
 var _pellet_tex: Texture2D = null
 var _exit_tex: Texture2D = null
+var _fruit_tex: Texture2D = null
 
 func set_board(board: BoardModel) -> void:
 	_board = board
@@ -25,6 +27,7 @@ func set_model(m: RefCounted) -> void:
 func _ready() -> void:
 	_pellet_tex = _load_svg_texture("res://assets/tiles/pellet-white.svg", 64)
 	_exit_tex = _load_svg_texture("res://assets/tiles/exit-white.svg", 64)
+	_fruit_tex = _load_svg_texture("res://assets/tiles/fruit.svg", 64)
 
 func _process(_delta: float) -> void:
 	queue_redraw()
@@ -103,7 +106,15 @@ func _draw_fruit(cell: Vector2) -> void:
 func _draw_fruit_at(tile: Vector2, cell: Vector2) -> void:
 	var cx: float = (tile.x + 0.5) * cell.x
 	var cy: float = (tile.y + 0.5) * cell.y
-	draw_circle(Vector2(cx, cy), cell.x * 0.22, FRUIT_COLOR)
+	var center: Vector2 = Vector2(cx, cy)
+	if _fruit_tex == null:
+		draw_circle(center, cell.x * 0.22, FRUIT_COLOR)
+		return
+	var size_scale: float = 0.78
+	var size: Vector2 = cell * size_scale
+	var pos: Vector2 = center - size * 0.5
+	if size.x > 0.001 and size.y > 0.001:
+		draw_texture_rect(_fruit_tex, Rect2(pos, size), false, Color(1, 1, 1, 1))
 
 func _draw_side_flash(cell: Vector2) -> void:
 	if _model == null:

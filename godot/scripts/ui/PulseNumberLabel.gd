@@ -78,7 +78,7 @@ func _draw() -> void:
 		var k: float = pulse_left / maxf(0.0001, pulse_duration_s)
 		var amp: float = 1.0 + 0.18 * sin((1.0 - k) * PI) * k
 		var c: Color = Color(1.0, 1.0 - 0.12 * k, 1.0 - 0.12 * k, 1.0)
-		var char_size: int = int(round(float(font_size) * amp))
+		var char_size: int = maxi(1, int(round(float(font_size) * amp)))
 		var y_off: float = -2.0 * k
 		draw_string(font, Vector2(x, y + y_off), ch, HORIZONTAL_ALIGNMENT_LEFT, -1.0, char_size, c)
 		x += font.get_string_size(ch, HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size).x

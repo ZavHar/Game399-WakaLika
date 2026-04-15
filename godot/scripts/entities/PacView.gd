@@ -62,7 +62,7 @@ func _draw() -> void:
 			if tex == null:
 				tex = _pac_open_tex if _pac_open_tex != null else _pac_closed_tex
 			var rot: float = _dir_to_angle(dir)
-			var sz: float = CELL_PX * 0.98
+			var sz: float = maxf(1.0, CELL_PX * 0.98)
 			draw_set_transform(Vector2(cx, cy), rot, Vector2.ONE)
 			draw_texture_rect(tex, Rect2(-sz * 0.5, -sz * 0.5, sz, sz), false, Color(1, 1, 1, 1))
 			draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
@@ -115,7 +115,7 @@ func _draw_trail(w: int, h: int) -> void:
 			var cx: float = rp.x * CELL_PX
 			var cy: float = rp.y * CELL_PX
 			if tex != null:
-				var sz: float = CELL_PX * (0.55 + 0.35 * life_k)
+				var sz: float = maxf(1.0, CELL_PX * (0.55 + 0.35 * life_k))
 				draw_set_transform(Vector2(cx, cy), rot, Vector2.ONE)
 				draw_texture_rect(tex, Rect2(-sz * 0.5, -sz * 0.5, sz, sz), false, Color(1.0, 1.0, 1.0, alpha))
 				draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
