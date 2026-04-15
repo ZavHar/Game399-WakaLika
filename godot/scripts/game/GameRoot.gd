@@ -15,6 +15,7 @@ var _ui_time_remaining_s: float = float(Constants.LEVEL_DURATION_S)
 
 var score_label: Control
 var time_label: Label
+var center_time_label: Label
 @onready var walls_view: Node2D = $Board
 @onready var wall_lights_view: Node2D = $WallLights
 @onready var wall_darken_view: Node2D = $WallDarken
@@ -33,6 +34,8 @@ var _show_ghost_paths: bool = false
 var _toggle_paths_key_was_down: bool = false
 var _vacuum_key_was_down: bool = false
 var _death_freeze: bool = false
+var _last_timer_display_int: int = -1
+var _timer_pulse_tween: Tween
 
 func _ready() -> void:
 	# Main adds the HUD label to group `game_status_hud` in _ready; run boot after that.
@@ -48,11 +51,13 @@ func _boot_after_main() -> void:
 	_vacuum_key_was_down = false
 	score_label = get_tree().get_first_node_in_group("game_score_hud") as Control
 	time_label = get_tree().get_first_node_in_group("game_time_hud") as Label
-	if score_label == null or time_label == null:
+	center_time_label = get_tree().get_first_node_in_group("game_time_center_hud") as Label
+	if score_label == null or time_label == null or center_time_label == null:
 		push_error("GameRoot: Main should register ScoreLabel/TimeLabel groups.")
 	else:
 		_set_score_label_raw("Loading...")
 		time_label.text = "--"
+		center_time_label.visible = false
 	if walls_view.has_method("load_default_layout"):
 		walls_view.call("load_default_layout")
 		var board: BoardModel = walls_view.call("get_board_model") as BoardModel
@@ -98,7 +103,7 @@ func _boot_after_main() -> void:
 		if score_label != null:
 			_set_score_label_score(0)
 		if time_label != null:
-			time_label.text = str(int(Constants.LEVEL_DURATION_S))
+			_update_timer_hud(float(Constants.LEVEL_DURATION_S))
 		if game_audio != null:
 			if game_audio.try_begin_start_song_blocking(get_tree()):
 				game_audio.start_song_finished.connect(_on_start_song_finished_boot, CONNECT_ONE_SHOT)
@@ -109,14 +114,15 @@ func _boot_after_main() -> void:
 			_set_score_label_raw("Load Error")
 		if time_label != null:
 			time_label.text = "--"
+		if center_time_label != null:
+			center_time_label.visible = false
 
 func _physics_process(delta: float) -> void:
 	if _death_freeze:
 		# Freeze simulation until death audio completes; keep HUD + music running.
 		_sim_time_s += delta
 		_ui_time_remaining_s = maxf(0.0, _ui_time_remaining_s - delta)
-		if time_label != null:
-			time_label.text = str(int(_ui_time_remaining_s))
+		_update_timer_hud(_ui_time_remaining_s)
 		if game_audio != null:
 			game_audio.update_ghost_ambience(null, delta)
 		_apply_hud_juice(delta)
@@ -168,8 +174,7 @@ func _step_simulation(dt: float) -> void:
 				_set_score_label_raw("GAME OVER   Score: %d" % score)
 			else:
 				_set_score_label_score(score)
-		if time_label != null:
-			time_label.text = str(int(time_remaining_s))
+		_update_timer_hud(time_remaining_s)
 
 func _apply_hud_juice(_delta: float) -> void:
 	if score_label == null:
@@ -184,10 +189,15 @@ func _apply_hud_juice(_delta: float) -> void:
 		if time_label != null:
 			var a: float = 0.5 + 0.5 * sin(_sim_time_s * TAU * 2.2)
 			time_label.modulate = Color(1.0, 0.83 + 0.12 * a, 0.83 + 0.12 * a, 1.0)
+		if center_time_label != null:
+			var b: float = 0.5 + 0.5 * sin(_sim_time_s * TAU * 2.2)
+			center_time_label.modulate = Color(1.0, 0.90 + 0.08 * b, 0.90 + 0.08 * b, 0.56)
 		score_label.modulate = Color(1, 1, 1, 1)
 	else:
 		if time_label != null:
 			time_label.modulate = Color(1, 1, 1, 1)
+		if center_time_label != null:
+			center_time_label.modulate = Color(1, 1, 1, 0.56)
 		score_label.modulate = Color(1, 1, 1, 1)
 
 func _set_score_label_raw(text: String) -> void:
@@ -201,6 +211,31 @@ func _set_score_label_score(score: int) -> void:
 		return
 	if score_label.has_method("set_score"):
 		score_label.call("set_score", score)
+
+func _update_timer_hud(time_s: float) -> void:
+	var t_i: int = ceili(maxf(0.0, time_s))
+	var prev_i: int = _last_timer_display_int
+	if center_time_label != null:
+		center_time_label.text = str(t_i)
+		center_time_label.visible = t_i <= 10
+	if time_label != null:
+		time_label.text = str(t_i)
+		time_label.visible = t_i > 10
+	# Pulse the large center timer when the countdown loses a second (last 10s only).
+	if prev_i >= 0 and t_i < prev_i and t_i <= 10:
+		_pulse_timer_label(center_time_label)
+	_last_timer_display_int = t_i
+
+func _pulse_timer_label(l: Label) -> void:
+	if l == null:
+		return
+	if _timer_pulse_tween != null and is_instance_valid(_timer_pulse_tween):
+		_timer_pulse_tween.kill()
+	l.pivot_offset = l.size * 0.5
+	l.scale = Vector2.ONE
+	_timer_pulse_tween = create_tween()
+	_timer_pulse_tween.tween_property(l, "scale", Vector2(2, 2), 0.01).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_timer_pulse_tween.tween_property(l, "scale", Vector2.ONE, 0.16).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 
 func get_model() -> RefCounted:
 	return _model

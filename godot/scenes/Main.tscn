@@ -7,6 +7,9 @@
 [ext_resource type="Script" uid="uid://chhn613japawk" path="res://scripts/ui/BoardPulseOverlay.gd" id="5_boardpulse"]
 [ext_resource type="Script" uid="uid://do617cbi5t1k7" path="res://scripts/ui/LivesView.gd" id="6_lives"]
 
+[sub_resource type="SystemFont" id="CenterTimeFont"]
+font_weight = 700
+
 [node name="Main" type="Control" unique_id=1141992600]
 layout_mode = 3
 anchors_preset = 15
@@ -69,6 +72,26 @@ theme_override_font_sizes/font_size = 28
 text = "300"
 horizontal_alignment = 1
 
+[node name="CenterTimeLabel" type="Label" parent="CanvasLayerHud" unique_id=1467885981]
+visible = false
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -300.0
+offset_top = -100.0
+offset_right = 300.0
+offset_bottom = 100.0
+theme_override_colors/font_color = Color(1, 1, 1, 0.56)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 10
+theme_override_fonts/font = SubResource("CenterTimeFont")
+theme_override_font_sizes/font_size = 176
+text = "10"
+horizontal_alignment = 1
+vertical_alignment = 1
+
 [node name="LivesView" type="Control" parent="CanvasLayerHud" unique_id=700369355]
 layout_mode = 3
 anchors_preset = 2
@@ -78,6 +101,7 @@ offset_left = 12.0
 offset_top = -52.0
 offset_right = 340.0
 offset_bottom = -10.0
+grow_vertical = 0
 mouse_filter = 2
 script = ExtResource("6_lives")
 

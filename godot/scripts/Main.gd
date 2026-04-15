@@ -24,8 +24,10 @@ func _ready() -> void:
 	Engine.physics_ticks_per_second = TARGET_FPS
 	var score_hud: Control = $CanvasLayerHud/ScoreLabel as Control
 	var time_hud: Label = $CanvasLayerHud/TimeLabel as Label
+	var center_time_hud: Label = $CanvasLayerHud/CenterTimeLabel as Label
 	score_hud.add_to_group("game_score_hud")
 	time_hud.add_to_group("game_time_hud")
+	center_time_hud.add_to_group("game_time_center_hud")
 	var _vp: SubViewport = $MarginPlayfield/AspectBoard/SubViewportContainer/SubViewport as SubViewport
 	#vp.size = BOARD_VIEWPORT_SIZE
 	# Match AspectRatioContainer to viewport (width / height); avoids float drift in .tscn.
