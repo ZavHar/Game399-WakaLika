@@ -12,8 +12,8 @@ const DIR_RIGHT: int = 3
 const LEVEL_DURATION_S: float = 300.0
 const PAC_TILES_PER_SEC: float = 5.0
 ## After this fraction of level time has elapsed, Pac reaches max ramp speed; then speed stays flat.
-const PAC_SPEED_MAX_RAMP: float = 11.0
-const GHOST_SPEED_MAX_RAMP: float = 12.0
+const PAC_SPEED_MAX_RAMP: float = 9.0
+const GHOST_SPEED_MAX_RAMP: float = 10.0
 const SPEED_RAMP_COMPLETE_FRACTION: float = 0.9
 const PAC_SUBSTEPS_PER_FRAME: int = 6
 const PELLET_SCORE: int = 10

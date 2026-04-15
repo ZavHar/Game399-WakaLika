@@ -5,7 +5,7 @@
 [ext_resource type="Script" uid="uid://qccb4m81wjhn" path="res://scripts/ui/PulseNumberLabel.gd" id="3_scorepulse"]
 [ext_resource type="Script" uid="uid://delivbvajq2ib" path="res://scripts/rendering/FloatingParticlesView.gd" id="4_particles"]
 [ext_resource type="Script" uid="uid://chhn613japawk" path="res://scripts/ui/BoardPulseOverlay.gd" id="5_boardpulse"]
-[ext_resource type="Script" path="res://scripts/ui/LivesView.gd" id="6_lives"]
+[ext_resource type="Script" uid="uid://do617cbi5t1k7" path="res://scripts/ui/LivesView.gd" id="6_lives"]
 
 [node name="Main" type="Control" unique_id=1141992600]
 layout_mode = 3
@@ -69,8 +69,9 @@ theme_override_font_sizes/font_size = 28
 text = "300"
 horizontal_alignment = 1
 
-[node name="LivesView" type="Control" parent="CanvasLayerHud"]
-anchors_preset = 10
+[node name="LivesView" type="Control" parent="CanvasLayerHud" unique_id=700369355]
+layout_mode = 3
+anchors_preset = 2
 anchor_top = 1.0
 anchor_bottom = 1.0
 offset_left = 12.0
